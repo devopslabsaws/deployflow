@@ -1,0 +1,219 @@
+
+> deployflow-platform@1.0.0 dev
+> next dev --port 3012
+
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3012
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 1867ms
+ ⚠ Found a change in next.config.mjs. Restarting the server to apply the changes...
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3012
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 3.8s
+ ○ Compiling / ...
+ ✓ Compiled / in 11.9s (1310 modules)
+ ✓ Compiled in 283ms (650 modules)
+ GET / 307 in 12274ms
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 9.2s (2968 modules)
+ GET /dashboard 200 in 10035ms
+ ○ Compiling /login ...
+ ✓ Compiled /login in 1633ms (3024 modules)
+(node:5044) [DEP0060] DeprecationWarning: The `util._extend` API is deprecated. Please use Object.assign() instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Failed to proxy http://localhost:5007/api/auth/login AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1142:49)
+    at afterConnectMultiple (node:net:1723:7) {
+  code: 'ECONNREFUSED',
+  [errors]: [
+    Error: connect ECONNREFUSED ::1:5007
+        at createConnectionError (node:net:1686:14)
+        at afterConnectMultiple (node:net:1716:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '::1',
+      port: 5007
+    },
+    Error: connect ECONNREFUSED 127.0.0.1:5007
+        at createConnectionError (node:net:1686:14)
+        at afterConnectMultiple (node:net:1716:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5007
+    }
+  ]
+}
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1142:49)
+    at afterConnectMultiple (node:net:1723:7) {
+  code: 'ECONNREFUSED',
+  [errors]: [
+    Error: connect ECONNREFUSED ::1:5007
+        at createConnectionError (node:net:1686:14)
+        at afterConnectMultiple (node:net:1716:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '::1',
+      port: 5007
+    },
+    Error: connect ECONNREFUSED 127.0.0.1:5007
+        at createConnectionError (node:net:1686:14)
+        at afterConnectMultiple (node:net:1716:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5007
+    }
+  ]
+}
+ ○ Compiling /_error ...
+Failed to proxy http://localhost:5007/api/auth/login AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1142:49)
+    at afterConnectMultiple (node:net:1723:7) {
+  code: 'ECONNREFUSED',
+  [errors]: [
+    Error: connect ECONNREFUSED ::1:5007
+        at createConnectionError (node:net:1686:14)
+        at afterConnectMultiple (node:net:1716:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '::1',
+      port: 5007
+    },
+    Error: connect ECONNREFUSED 127.0.0.1:5007
+        at createConnectionError (node:net:1686:14)
+        at afterConnectMultiple (node:net:1716:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5007
+    }
+  ]
+}
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1142:49)
+    at afterConnectMultiple (node:net:1723:7) {
+  code: 'ECONNREFUSED',
+  [errors]: [
+    Error: connect ECONNREFUSED ::1:5007
+        at createConnectionError (node:net:1686:14)
+        at afterConnectMultiple (node:net:1716:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '::1',
+      port: 5007
+    },
+    Error: connect ECONNREFUSED 127.0.0.1:5007
+        at createConnectionError (node:net:1686:14)
+        at afterConnectMultiple (node:net:1716:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5007
+    }
+  ]
+}
+ ✓ Compiled /_error in 4.5s (2590 modules)
+   Reload env: .env.local
+ ✓ Compiled in 2.1s (2602 modules)
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 1282ms (1585 modules)
+ ○ Compiling /servers ...
+ ✓ Compiled /servers in 2.4s (3284 modules)
+ ○ Compiling /servers/[id] ...
+ ✓ Compiled /servers/[id] in 1569ms (3314 modules)
+ ○ Compiling /servers/[id]/terminal ...
+ ✓ Compiled /servers/[id]/terminal in 1360ms (3316 modules)
+ ✓ Compiled in 1113ms (3330 modules)
+ ⚠ Found a change in next.config.mjs. Restarting the server to apply the changes...
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3012
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 13.5s
+ ⚠ Found a change in next.config.mjs. Restarting the server to apply the changes...
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3012
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 3.2s
+ ⚠ Found a change in next.config.mjs. Restarting the server to apply the changes...
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3012
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 5.8s
+ ⚠ Found a change in next.config.mjs. Restarting the server to apply the changes...
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3012
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 3.1s
+ ⚠ Found a change in next.config.mjs. Restarting the server to apply the changes...
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3012
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 9.3s
+   Reload env: .env.local
+ ⚠ Found a change in next.config.mjs. Restarting the server to apply the changes...
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3012
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 6.3s
+ ⚠ Found a change in next.config.mjs. Restarting the server to apply the changes...
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3012
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 14.8s
+ ⚠ Found a change in next.config.mjs. Restarting the server to apply the changes...
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3012
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 6.5s
+ ⚠ Found a change in next.config.mjs. Restarting the server to apply the changes...
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3012
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 6.9s
+ ⚠ Found a change in next.config.mjs. Restarting the server to apply the changes...
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3012
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 8.3s
+ ⚠ Found a change in next.config.mjs. Restarting the server to apply the changes...
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3012
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 17.2s

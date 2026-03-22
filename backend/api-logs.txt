@@ -1,0 +1,144 @@
+Using launch settings from D:\LNT\Coolify\backend\src\DeployFlow.API\Properties\launchSettings.json...
+[09:23:30 INF] Executed DbCommand (25ms) [Parameters=[], CommandType='Text', CommandTimeout='0']
+SELECT t.table_name FROM user_tables t WHERE t.table_name = N'__EFMigrationsHistory'
+[09:23:30 INF] Executed DbCommand (2ms) [Parameters=[], CommandType='Text', CommandTimeout='0']
+SELECT t.table_name FROM user_tables t WHERE t.table_name = N'__EFMigrationsHistory'
+[09:23:30 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='0']
+SELECT "MigrationId", "ProductVersion"
+FROM "__EFMigrationsHistory"
+ORDER BY "MigrationId"
+[09:23:30 INF] Executed DbCommand (8ms) [Parameters=[:normalizedName_0='?' (Size = 256)], CommandType='Text', CommandTimeout='0']
+SELECT "r"."Id", "r"."ConcurrencyStamp", "r"."Description", "r"."Name", "r"."NormalizedName"
+FROM "roles" "r"
+WHERE "r"."NormalizedName" = :normalizedName_0
+FETCH FIRST 1 ROWS ONLY
+[09:23:30 INF] Executed DbCommand (1ms) [Parameters=[:normalizedName_0='?' (Size = 256)], CommandType='Text', CommandTimeout='0']
+SELECT "r"."Id", "r"."ConcurrencyStamp", "r"."Description", "r"."Name", "r"."NormalizedName"
+FROM "roles" "r"
+WHERE "r"."NormalizedName" = :normalizedName_0
+FETCH FIRST 1 ROWS ONLY
+[09:23:30 INF] Executed DbCommand (1ms) [Parameters=[:normalizedName_0='?' (Size = 256)], CommandType='Text', CommandTimeout='0']
+SELECT "r"."Id", "r"."ConcurrencyStamp", "r"."Description", "r"."Name", "r"."NormalizedName"
+FROM "roles" "r"
+WHERE "r"."NormalizedName" = :normalizedName_0
+FETCH FIRST 1 ROWS ONLY
+[09:23:30 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='0']
+SELECT CASE
+    WHEN EXISTS (
+        SELECT 1
+        FROM "tenants" "t"
+        WHERE "t"."IsDeleted" = 0) THEN 1
+    ELSE 0
+END FROM DUAL
+[09:23:30 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='0']
+SELECT "t"."Id", "t"."CreatedAt", "t"."CreatedBy", "t"."IsActive", "t"."IsDeleted", "t"."LogoUrl", "t"."MaxDeployments", "t"."MaxProjects", "t"."MaxServers", "t"."Name", "t"."Plan", "t"."Slug", "t"."SsoClientId", "t"."SsoClientSecret", "t"."SsoEnabled", "t"."SsoIssuer", "t"."UpdatedAt", "t"."UpdatedBy"
+FROM "tenants" "t"
+WHERE "t"."IsDeleted" = 0
+FETCH FIRST 1 ROWS ONLY
+[09:23:30 INF] Executed DbCommand (1ms) [Parameters=[:normalizedEmail_0='?' (Size = 256)], CommandType='Text', CommandTimeout='0']
+SELECT "u"."Id", "u"."AccessFailedCount", "u"."AvatarUrl", "u"."ConcurrencyStamp", "u"."CreatedAt", "u"."Email", "u"."EmailConfirmed", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."LockoutEnabled", "u"."LockoutEnd", "u"."NormalizedEmail", "u"."NormalizedUserName", "u"."PasswordHash", "u"."PhoneNumber", "u"."PhoneNumberConfirmed", "u"."RefreshToken", "u"."RefreshTokenExpiry", "u"."Role", "u"."SecurityStamp", "u"."TenantId", "u"."TwoFactorEnabled", "u"."UserName"
+FROM "users" "u"
+WHERE "u"."NormalizedEmail" = :normalizedEmail_0
+FETCH FIRST 2 ROWS ONLY
+[09:23:30 INF] Executed DbCommand (2ms) [Parameters=[], CommandType='Text', CommandTimeout='0']
+SELECT CASE
+    WHEN EXISTS (
+        SELECT 1
+        FROM "servers" "s"
+        WHERE "s"."IsDeleted" = 0) THEN 1
+    ELSE 0
+END FROM DUAL
+[09:23:30 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='0']
+SELECT CASE
+    WHEN EXISTS (
+        SELECT 1
+        FROM "projects" "p"
+        WHERE "p"."IsDeleted" = 0) THEN 1
+    ELSE 0
+END FROM DUAL
+[09:23:30 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='0']
+SELECT CASE
+    WHEN EXISTS (
+        SELECT 1
+        FROM "database_instances" "d"
+        WHERE "d"."IsDeleted" = 0) THEN 1
+    ELSE 0
+END FROM DUAL
+[09:23:30 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='0']
+SELECT CASE
+    WHEN EXISTS (
+        SELECT 1
+        FROM "alerts" "a"
+        WHERE "a"."IsDeleted" = 0) THEN 1
+    ELSE 0
+END FROM DUAL
+[09:23:30 INF] DeploymentRunner started.
+[09:23:30 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='0']
+SELECT "d"."Id", "d"."Branch", "d"."CommitAuthor", "d"."CommitMessage", "d"."CommitSha", "d"."CreatedAt", "d"."CreatedBy", "d"."DurationSeconds", "d"."EnvironmentId", "d"."ErrorMessage", "d"."FinishedAt", "d"."ImageTag", "d"."IsDeleted", "d"."IsRollback", "d"."Metadata", "d"."PreviousDeploymentId", "d"."ProjectId", "d"."ServerId", "d"."StartedAt", "d"."Status", "d"."TenantId", "d"."Trigger", "d"."TriggeredBy", "d"."UpdatedAt", "d"."UpdatedBy", "d"."Url"
+FROM "deployments" "d"
+WHERE (("d"."IsDeleted" = 0) AND ("d"."Status" IN (N'Queued', N'Building', N'Deploying')))
+[09:23:30 INF] ServerHealthCheckService started.
+[09:23:30 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='0']
+SELECT "s"."Id", "s"."ActiveContainers", "s"."Arch", "s"."CpuCount", "s"."CpuUsagePercent", "s"."CreatedAt", "s"."CreatedBy", "s"."DiskGb", "s"."DiskUsagePercent", "s"."DockerVersion", "s"."Hostname", "s"."IpAddress", "s"."IsDeleted", "s"."IsSwarmManager", "s"."IsSwarmWorker", "s"."KubernetesEnabled", "s"."LastHealthCheckAt", "s"."MemoryGb", "s"."MemoryUsagePercent", "s"."Name", "s"."Os", "s"."Provider", "s"."Region", "s"."SshKeyId", "s"."SshPort", "s"."SshUser", "s"."Status", "s"."SwarmNodeId", "s"."Tags", "s"."TenantId", "s"."UpdatedAt", "s"."UpdatedBy"
+FROM "servers" "s"
+WHERE (("s"."IsDeleted" = 0) AND ("s"."IsDeleted" = 0))
+[09:23:31 INF] AlertEvaluatorService started.
+[09:23:31 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='0']
+SELECT "s"."Id", "s"."ActiveContainers", "s"."Arch", "s"."CpuCount", "s"."CpuUsagePercent", "s"."CreatedAt", "s"."CreatedBy", "s"."DiskGb", "s"."DiskUsagePercent", "s"."DockerVersion", "s"."Hostname", "s"."IpAddress", "s"."IsDeleted", "s"."IsSwarmManager", "s"."IsSwarmWorker", "s"."KubernetesEnabled", "s"."LastHealthCheckAt", "s"."MemoryGb", "s"."MemoryUsagePercent", "s"."Name", "s"."Os", "s"."Provider", "s"."Region", "s"."SshKeyId", "s"."SshPort", "s"."SshUser", "s"."Status", "s"."SwarmNodeId", "s"."Tags", "s"."TenantId", "s"."UpdatedAt", "s"."UpdatedBy"
+FROM "servers" "s"
+WHERE (("s"."IsDeleted" = 0) AND ("s"."IsDeleted" = 0))
+[09:23:31 INF] ContainerMetricsCollectorService started.
+[09:23:31 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='0']
+SELECT "s"."Id", "s"."ActiveContainers", "s"."Arch", "s"."CpuCount", "s"."CpuUsagePercent", "s"."CreatedAt", "s"."CreatedBy", "s"."DiskGb", "s"."DiskUsagePercent", "s"."DockerVersion", "s"."Hostname", "s"."IpAddress", "s"."IsDeleted", "s"."IsSwarmManager", "s"."IsSwarmWorker", "s"."KubernetesEnabled", "s"."LastHealthCheckAt", "s"."MemoryGb", "s"."MemoryUsagePercent", "s"."Name", "s"."Os", "s"."Provider", "s"."Region", "s"."SshKeyId", "s"."SshPort", "s"."SshUser", "s"."Status", "s"."SwarmNodeId", "s"."Tags", "s"."TenantId", "s"."UpdatedAt", "s"."UpdatedBy"
+FROM "servers" "s"
+WHERE (("s"."IsDeleted" = 0) AND ((("s"."IsDeleted" = 0) AND ("s"."Status" = N'Online'))))
+[09:23:31 ERR] Hosting failed to start
+System.IO.IOException: Failed to bind to address http://127.0.0.1:5000: address already in use.
+ ---> Microsoft.AspNetCore.Connections.AddressInUseException: Only one usage of each socket address (protocol/network address/port) is normally permitted.
+ ---> System.Net.Sockets.SocketException (10048): Only one usage of each socket address (protocol/network address/port) is normally permitted.
+   at System.Net.Sockets.Socket.UpdateStatusAfterSocketErrorAndThrowException(SocketError error, Boolean disconnectOnFailure, String callerName)
+   at System.Net.Sockets.Socket.DoBind(EndPoint endPointSnapshot, SocketAddress socketAddress)
+   at System.Net.Sockets.Socket.Bind(EndPoint localEP)
+   at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportOptions.CreateDefaultBoundListenSocket(EndPoint endpoint)
+   at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionListener.Bind()
+   --- End of inner exception stack trace ---
+   at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionListener.Bind()
+   at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportFactory.BindAsync(EndPoint endpoint, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Infrastructure.TransportManager.BindAsync(EndPoint endPoint, ConnectionDelegate connectionDelegate, EndpointConfig endpointConfig, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.<>c__DisplayClass28_0`1.<<StartAsync>g__OnBind|0>d.MoveNext()
+--- End of stack trace from previous location ---
+   at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.BindEndpointAsync(ListenOptions endpoint, AddressBindContext context, CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.BindEndpointAsync(ListenOptions endpoint, AddressBindContext context, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.LocalhostListenOptions.BindAsync(AddressBindContext context, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.AddressesStrategy.BindAsync(AddressBindContext context, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.BindAsync(ListenOptions[] listenOptions, AddressBindContext context, Func`2 useHttps, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.BindAsync(CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.StartAsync[TContext](IHttpApplication`1 application, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Hosting.GenericWebHostService.StartAsync(CancellationToken cancellationToken)
+   at Microsoft.Extensions.Hosting.Internal.Host.<StartAsync>b__15_1(IHostedService service, CancellationToken token)
+   at Microsoft.Extensions.Hosting.Internal.Host.ForeachService[T](IEnumerable`1 services, CancellationToken token, Boolean concurrent, Boolean abortOnFirstException, List`1 exceptions, Func`3 operation)
+[09:23:31 ERR] BackgroundService failed
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at DeployFlow.Infrastructure.BackgroundServices.AlertEvaluatorService.ExecuteAsync(CancellationToken stoppingToken) in D:\LNT\Coolify\backend\src\DeployFlow.Infrastructure\BackgroundServices\BackgroundServices.cs:line 110
+   at Microsoft.Extensions.Hosting.Internal.Host.TryExecuteBackgroundServiceAsync(BackgroundService backgroundService)
+[09:23:31 ERR] BackgroundService failed
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at DeployFlow.Infrastructure.BackgroundServices.DeploymentRunnerService.ExecuteAsync(CancellationToken stoppingToken) in D:\LNT\Coolify\backend\src\DeployFlow.Infrastructure\BackgroundServices\DeploymentRunnerService.cs:line 42
+   at Microsoft.Extensions.Hosting.Internal.Host.TryExecuteBackgroundServiceAsync(BackgroundService backgroundService)
+[09:23:31 ERR] BackgroundService failed
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at DeployFlow.Infrastructure.BackgroundServices.ServerHealthCheckService.ExecuteAsync(CancellationToken stoppingToken) in D:\LNT\Coolify\backend\src\DeployFlow.Infrastructure\BackgroundServices\BackgroundServices.cs:line 40
+   at Microsoft.Extensions.Hosting.Internal.Host.TryExecuteBackgroundServiceAsync(BackgroundService backgroundService)
+[09:23:31 FTL] The HostOptions.BackgroundServiceExceptionBehavior is configured to StopHost. A BackgroundService has thrown an unhandled exception, and the IHost instance is stopping. To avoid this behavior, configure this to Ignore; however the BackgroundService will not be restarted.
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at DeployFlow.Infrastructure.BackgroundServices.AlertEvaluatorService.ExecuteAsync(CancellationToken stoppingToken) in D:\LNT\Coolify\backend\src\DeployFlow.Infrastructure\BackgroundServices\BackgroundServices.cs:line 110
+   at Microsoft.Extensions.Hosting.Internal.Host.TryExecuteBackgroundServiceAsync(BackgroundService backgroundService)
+[09:23:31 FTL] The HostOptions.BackgroundServiceExceptionBehavior is configured to StopHost. A BackgroundService has thrown an unhandled exception, and the IHost instance is stopping. To avoid this behavior, configure this to Ignore; however the BackgroundService will not be restarted.
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at DeployFlow.Infrastructure.BackgroundServices.DeploymentRunnerService.ExecuteAsync(CancellationToken stoppingToken) in D:\LNT\Coolify\backend\src\DeployFlow.Infrastructure\BackgroundServices\DeploymentRunnerService.cs:line 42
+   at Microsoft.Extensions.Hosting.Internal.Host.TryExecuteBackgroundServiceAsync(BackgroundService backgroundService)
+[09:23:31 FTL] The HostOptions.BackgroundServiceExceptionBehavior is configured to StopHost. A BackgroundService has thrown an unhandled exception, and the IHost instance is stopping. To avoid this behavior, configure this to Ignore; however the BackgroundService will not be restarted.
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at DeployFlow.Infrastructure.BackgroundServices.ServerHealthCheckService.ExecuteAsync(CancellationToken stoppingToken) in D:\LNT\Coolify\backend\src\DeployFlow.Infrastructure\BackgroundServices\BackgroundServices.cs:line 40
+   at Microsoft.Extensions.Hosting.Internal.Host.TryExecuteBackgroundServiceAsync(BackgroundService backgroundService)

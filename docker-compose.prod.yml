@@ -1,0 +1,94 @@
+# Production compose — uses pre-built images from Docker Hub.
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Required env vars (set in .env or export before running):
+#   DOCKERHUB_USERNAME   your Docker Hub username
+#   IMAGE_TAG            image tag to deploy (default: latest)
+#   POSTGRES_PASSWORD    strong DB password
+#   REDIS_PASSWORD       strong Redis password
+#   JWT_SECRET           >= 32 char random string
+#   ENCRYPTION_SECRET    >= 32 char random string
+#   ALLOWED_ORIGINS      comma-separated frontend URLs
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: deployflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       deployflow
+      POSTGRES_USER:     deployflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U deployflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: deployflow-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:?required} --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    image: ${DOCKERHUB_USERNAME:?required}/deployflow-api:${IMAGE_TAG:-latest}
+    container_name: deployflow-api
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT:             Production
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=deployflow;Username=deployflow;Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__Redis:           "redis:6379,password=${REDIS_PASSWORD}"
+      Jwt__Secret:                        ${JWT_SECRET:?required}
+      Jwt__Issuer:                        deployflow
+      Jwt__Audience:                      deployflow-users
+      Jwt__ExpiryMinutes:                 "60"
+      Encryption__Secret:                 ${ENCRYPTION_SECRET:?required}
+      AllowedOrigins:                     ${ALLOWED_ORIGINS:-http://localhost:3000}
+    ports:
+      - "5000:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    image: ${DOCKERHUB_USERNAME:?required}/deployflow-frontend:${IMAGE_TAG:-latest}
+    container_name: deployflow-frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV:               production
+      NEXT_PUBLIC_API_URL:    ${NEXT_PUBLIC_API_URL:-/proxy}
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+  redis_data:

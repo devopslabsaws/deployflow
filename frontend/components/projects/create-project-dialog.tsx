@@ -1,0 +1,246 @@
+"use client";
+
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Loader2, GitBranch, Github, Globe, Server } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useCreateProject, useServers } from "@/hooks/use-api";
+import { toast } from "sonner";
+
+const schema = z.object({
+  name: z
+    .string()
+    .min(2, "Must be at least 2 chars")
+    .max(50, "Too long")
+    .regex(/^[a-zA-Z0-9-_]+$/, "Alphanumeric, hyphens and underscores only"),
+  description: z.string().max(200).optional(),
+  repositoryUrl: z.string().url("Must be a valid URL").optional().or(z.literal("")),
+  repositoryBranch: z.string().default("main"),
+  buildCommand: z.string().optional(),
+  startCommand: z.string().optional(),
+  port: z.coerce.number().min(1).max(65535).optional(),
+  autoDeployEnabled: z.boolean().default(true),
+  dockerfilePath: z.string().optional(),
+});
+
+type FormData = z.infer<typeof schema>;
+
+interface CreateProjectDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogProps) {
+  const create = useCreateProject();
+  const { data: serversRaw } = useServers();
+  const servers = serversRaw ?? [];
+  const [activeTab, setActiveTab] = useState("general");
+  const [selectedServerId, setSelectedServerId] = useState<string>("none");
+  const {
+    register,
+    handleSubmit,
+    reset,
+    watch,
+    setValue,
+    formState: { errors, isSubmitting },
+  } = useForm<FormData>({ resolver: zodResolver(schema), defaultValues: { autoDeployEnabled: true, repositoryBranch: "main" } });
+
+  const autoDeployEnabled = watch("autoDeployEnabled");
+
+  const onSubmit = async (data: FormData) => {
+    try {
+      await create.mutateAsync({
+        name: data.name,
+        description: data.description ?? "",
+        repositoryUrl: data.repositoryUrl || undefined,
+        branch: data.repositoryBranch || "main",
+        buildCommand: data.buildCommand ?? "",
+        startCommand: data.startCommand ?? "",
+        dockerfilePath: data.dockerfilePath,
+        framework: "",
+        autoDeploy: data.autoDeployEnabled,
+        tags: [],
+        assignedServerId: selectedServerId !== "none" ? selectedServerId : undefined,
+      } as any);
+      toast.success(`Project "${data.name}" created!`);
+      reset();
+      setActiveTab("general");
+      setSelectedServerId("none");
+      onOpenChange(false);
+    } catch (e: any) {
+      toast.error("Failed to create project", { description: e.message });
+    }
+  };
+
+  const onValidationError = (errs: typeof errors) => {
+    const generalFields = ["name", "description"] as const;
+    const repoFields = ["repositoryUrl", "repositoryBranch"] as const;
+    const buildFields = ["buildCommand", "startCommand", "dockerfilePath", "port"] as const;
+    if (generalFields.some(f => errs[f])) {
+      setActiveTab("general");
+    } else if (repoFields.some(f => errs[f])) {
+      setActiveTab("repository");
+    } else if (buildFields.some(f => errs[f])) {
+      setActiveTab("build");
+    }
+    toast.error("Please fix the validation errors before submitting.");
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Create New Project</DialogTitle>
+          <DialogDescription>
+            Configure your project and deployment settings.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit(onSubmit, onValidationError)} className="space-y-4">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="w-full">
+              <TabsTrigger value="general" className="flex-1">General</TabsTrigger>
+              <TabsTrigger value="repository" className="flex-1">Repository</TabsTrigger>
+              <TabsTrigger value="build" className="flex-1">Build</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="general" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">Project Name *</Label>
+                <Input id="name" placeholder="my-awesome-app" {...register("name")} />
+                {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  placeholder="Brief description of your project..."
+                  rows={3}
+                  {...register("description")}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Deploy Server</Label>
+                <Select value={selectedServerId} onValueChange={setSelectedServerId}>
+                  <SelectTrigger>
+                    <div className="flex items-center gap-2">
+                      <Server className="h-4 w-4 text-muted-foreground" />
+                      <SelectValue placeholder="Select a server..." />
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No server (assign later)</SelectItem>
+                    {servers.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name} — {s.ipAddress ?? ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">A server must be assigned before deploying.</p>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="repository" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label htmlFor="repoUrl">Repository URL</Label>
+                <div className="relative">
+                  <Github className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    id="repoUrl"
+                    placeholder="https://github.com/user/repo"
+                    className="pl-9"
+                    {...register("repositoryUrl")}
+                  />
+                </div>
+                {errors.repositoryUrl && (
+                  <p className="text-xs text-destructive">{errors.repositoryUrl.message}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="branch">Default Branch</Label>
+                <div className="relative">
+                  <GitBranch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    id="branch"
+                    placeholder="main"
+                    className="pl-9"
+                    {...register("repositoryBranch")}
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div>
+                  <p className="text-sm font-medium">Auto Deploy</p>
+                  <p className="text-xs text-muted-foreground">Deploy on every commit push</p>
+                </div>
+                <Switch
+                  checked={autoDeployEnabled}
+                  onCheckedChange={(v) => setValue("autoDeployEnabled", v)}
+                />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="build" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label htmlFor="buildCommand">Build Command</Label>
+                <Input id="buildCommand" placeholder="npm run build" {...register("buildCommand")} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="startCommand">Start Command</Label>
+                <Input id="startCommand" placeholder="npm start" {...register("startCommand")} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="dockerfilePath">Dockerfile Path</Label>
+                <Input id="dockerfilePath" placeholder="./Dockerfile" {...register("dockerfilePath")} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="port">Port</Label>
+                <Input
+                  id="port"
+                  type="number"
+                  placeholder="3000"
+                  {...register("port")}
+                />
+              </div>
+            </TabsContent>
+          </Tabs>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={isSubmitting || create.isPending}>
+              {(isSubmitting || create.isPending) && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Create Project
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

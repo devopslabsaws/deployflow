@@ -1,0 +1,66 @@
+
+> deployflow-platform@1.0.0 dev
+> next dev --port 3013
+
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3013
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 1609ms
+ ⚠ Found a change in next.config.mjs. Restarting the server to apply the changes...
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3013
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 4.3s
+ ○ Compiling / ...
+ ✓ Compiled / in 14s (1310 modules)
+ ✓ Compiled in 883ms (650 modules)
+ GET / 307 in 14991ms
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 16.5s (2968 modules)
+ GET /dashboard 200 in 17463ms
+ ○ Compiling /login ...
+ ✓ Compiled /login in 1548ms (3038 modules)
+(node:47536) [DEP0060] DeprecationWarning: The `util._extend` API is deprecated. Please use Object.assign() instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+ ○ Compiling /servers ...
+ ✓ Compiled /servers in 1976ms (3064 modules)
+ ○ Compiling /servers/[id]/terminal ...
+ ✓ Compiled /servers/[id]/terminal in 1232ms (3082 modules)
+ ○ Compiling /settings ...
+ ✓ Compiled /settings in 1739ms (3112 modules)
+ ○ Compiling /security ...
+ ✓ Compiled /security in 2s (3124 modules)
+ ○ Compiling /servers/[id] ...
+ ✓ Compiled /servers/[id] in 2s (3127 modules)
+ ○ Compiling /servers/[id]/settings ...
+ ✓ Compiled /servers/[id]/settings in 1207ms (3135 modules)
+ ✓ Compiled in 2.9s (2615 modules)
+ ✓ Compiled in 1288ms (2615 modules)
+ ✓ Compiled in 1101ms (2615 modules)
+ ⚠ Found a change in next.config.mjs. Restarting the server to apply the changes...
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3013
+  - Environments: .env.local
+
+ ✓ Starting...
+Error: EPERM: operation not permitted, scandir 'D:\LNT\Coolify\frontend\.next\types\app\(dashboard)\dashboard'
+    at async Object.readdir (node:internal/fs/promises:953:18)
+    at async recursiveDelete (D:\LNT\Coolify\frontend\node_modules\next\dist\lib\recursive-delete.js:42:18)
+    at async D:\LNT\Coolify\frontend\node_modules\next\dist\lib\recursive-delete.js:68:17
+    at async Promise.all (index 0)
+    at async recursiveDelete (D:\LNT\Coolify\frontend\node_modules\next\dist\lib\recursive-delete.js:51:5)
+    at async D:\LNT\Coolify\frontend\node_modules\next\dist\lib\recursive-delete.js:68:17
+    at async Promise.all (index 1)
+    at async recursiveDelete (D:\LNT\Coolify\frontend\node_modules\next\dist\lib\recursive-delete.js:51:5)
+    at async D:\LNT\Coolify\frontend\node_modules\next\dist\lib\recursive-delete.js:68:17
+    at async Promise.all (index 0) {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'scandir',
+  path: 'D:\\LNT\\Coolify\\frontend\\.next\\types\\app\\(dashboard)\\dashboard'
+}
+[?25h

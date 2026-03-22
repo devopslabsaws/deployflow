@@ -1,0 +1,99 @@
+
+> deployflow-platform@1.0.0 dev
+> next dev --port 3014
+
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3014
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 1616ms
+ ○ Compiling / ...
+ ✓ Compiled / in 14.5s (1310 modules)
+ ✓ Compiled in 1038ms (650 modules)
+ GET / 307 in 15725ms
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 16.3s (2968 modules)
+ GET /dashboard 200 in 17285ms
+ ○ Compiling /login ...
+ ✓ Compiled /login in 1229ms (3024 modules)
+(node:42972) [DEP0060] DeprecationWarning: The `util._extend` API is deprecated. Please use Object.assign() instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+ ○ Compiling /settings ...
+ ✓ Compiled /settings in 2.5s (3086 modules)
+ ○ Compiling /servers ...
+ ✓ Compiled /servers in 2.1s (3104 modules)
+ ○ Compiling /servers/[id]/settings ...
+ ✓ Compiled /servers/[id]/settings in 1376ms (3116 modules)
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ✓ Compiled in 2.3s (3122 modules)
+ GET /servers 200 in 1983ms
+ ✓ Compiled in 1844ms (3122 modules)
+ ○ Compiling /servers/[id] ...
+ ✓ Compiled /servers/[id] in 2.5s (3116 modules)
+ ○ Compiling /servers/[id]/terminal ...
+ ✓ Compiled /servers/[id]/terminal in 1191ms (3132 modules)
+ ✓ Compiled in 3.4s (3134 modules)
+ ○ Compiling /team ...
+ ✓ Compiled /team in 3.1s (3140 modules)
+ ✓ Compiled in 1092ms (3140 modules)
+ ✓ Compiled in 1345ms (2609 modules)
+ GET /team 200 in 512ms
+ ○ Compiling /security ...
+ ✓ Compiled /security in 1588ms (2635 modules)
+ ⚠ Found a change in next.config.mjs. Restarting the server to apply the changes...
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3014
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 7.6s
+(node:14808) [DEP0060] DeprecationWarning: The `util._extend` API is deprecated. Please use Object.assign() instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+   Reload env: .env.local
+ ⚠ Found a change in next.config.mjs. Restarting the server to apply the changes...
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3014
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 5.8s
+(node:45772) [DEP0060] DeprecationWarning: The `util._extend` API is deprecated. Please use Object.assign() instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+ ⚠ Found a change in next.config.mjs. Restarting the server to apply the changes...
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3014
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 15s
+ ⚠ Found a change in next.config.mjs. Restarting the server to apply the changes...
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3014
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 7.5s
+ ⚠ Found a change in next.config.mjs. Restarting the server to apply the changes...
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3014
+  - Environments: .env.local
+
+ ✓ Starting...
+Error: EPERM: operation not permitted, scandir 'D:\LNT\Coolify\frontend\.next\static\webpack\app\(dashboard)\deployments\[id]'
+    at async Object.readdir (node:internal/fs/promises:953:18)
+    at async recursiveDelete (D:\LNT\Coolify\frontend\node_modules\next\dist\lib\recursive-delete.js:42:18)
+    at async D:\LNT\Coolify\frontend\node_modules\next\dist\lib\recursive-delete.js:68:17
+    at async Promise.all (index 0)
+    at async recursiveDelete (D:\LNT\Coolify\frontend\node_modules\next\dist\lib\recursive-delete.js:51:5)
+    at async D:\LNT\Coolify\frontend\node_modules\next\dist\lib\recursive-delete.js:68:17
+    at async Promise.all (index 0)
+    at async recursiveDelete (D:\LNT\Coolify\frontend\node_modules\next\dist\lib\recursive-delete.js:51:5)
+    at async D:\LNT\Coolify\frontend\node_modules\next\dist\lib\recursive-delete.js:68:17
+    at async Promise.all (index 0) {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'scandir',
+  path: 'D:\\LNT\\Coolify\\frontend\\.next\\static\\webpack\\app\\(dashboard)\\deployments\\[id]'
+}
+[?25h

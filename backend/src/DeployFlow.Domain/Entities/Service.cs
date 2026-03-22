@@ -1,0 +1,75 @@
+using DeployFlow.Domain.Common;
+
+namespace DeployFlow.Domain.Entities;
+
+public enum ServiceStatus { Running, Stopped, Starting, Restarting, Error }
+public enum ServiceType { Web, Api, Worker, Cron, Database, Cache, Queue, Storage }
+
+public class Service : AggregateRoot
+{
+    public Guid ProjectId { get; private set; }
+    public string Name { get; private set; } = default!;
+    public ServiceType Type { get; private set; }
+    public ServiceStatus Status { get; private set; } = ServiceStatus.Stopped;
+    public string? Image { get; private set; }
+    public string? Tag { get; private set; }
+    public int Replicas { get; private set; } = 1;
+    public Guid? DomainId { get; private set; }
+    public string? ContainerId { get; private set; }
+    public string? CpuLimit { get; private set; }
+    public string? MemoryLimit { get; private set; }
+    public string? CpuRequest { get; private set; }
+    public string? MemoryRequest { get; private set; }
+    public string? HealthCheckPath { get; private set; }
+    public int HealthCheckInterval { get; private set; } = 30;
+    public int HealthCheckTimeout { get; private set; } = 10;
+    public int HealthCheckRetries { get; private set; } = 3;
+    public int HealthCheckStartPeriod { get; private set; } = 10;
+
+    // Navigation
+    public Project Project { get; private set; } = default!;
+    public ICollection<EnvVariable> EnvVariables { get; private set; } = new List<EnvVariable>();
+
+    private Service() { }
+
+    public static Service Create(Guid tenantId, Guid projectId, string name, ServiceType type, string? image = null)
+    {
+        return new Service
+        {
+            TenantId = tenantId,
+            ProjectId = projectId,
+            Name = name,
+            Type = type,
+            Image = image,
+        };
+    }
+
+    public void SetStatus(ServiceStatus status) { Status = status; Touch(); }
+    public void SetContainerId(string id) { ContainerId = id; Touch(); }
+    public void SetReplicas(int count) { Replicas = Math.Max(0, count); Touch(); }
+
+    public void ConfigureResources(
+        string? cpuLimit = null,
+        string? memoryLimit = null,
+        string? cpuRequest = null,
+        string? memoryRequest = null)
+    {
+        CpuLimit = cpuLimit;
+        MemoryLimit = memoryLimit;
+        CpuRequest = cpuRequest;
+        MemoryRequest = memoryRequest;
+        Touch();
+    }
+}
+
+public class DeploymentLog : BaseEntity
+{
+    public Guid DeploymentId { get; set; }
+    public string Message { get; set; } = default!;
+    public LogLevel Level { get; set; } = LogLevel.Info;
+    public string? Stream { get; set; } // "stdout" | "stderr"
+    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+    public Deployment Deployment { get; set; } = default!;
+}
+
+public enum LogLevel { Debug, Info, Warn, Error }
