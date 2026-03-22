@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useServer, useServerMetrics, queryKeys } from "@/hooks/use-api";
+import { useServer, useServerMetrics, useServerContainers, queryKeys } from "@/hooks/use-api";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/utils";
@@ -31,6 +31,9 @@ export default function ServerDetailPage({ params }: { params: { id: string } })
   const queryClient = useQueryClient();
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<"ok" | "fail" | null>(null);
+  const [activeTab, setActiveTab] = useState("overview");
+  const { data: containers, isLoading: containersLoading, refetch: refetchContainers } =
+    useServerContainers(id, activeTab === "containers" && server?.status === "online");
 
   function getToken() {
     try {
@@ -136,7 +139,7 @@ export default function ServerDetailPage({ params }: { params: { id: string } })
         </div>
       </div>
 
-      <Tabs defaultValue="overview">
+      <Tabs defaultValue="overview" onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="containers">Containers</TabsTrigger>
@@ -219,10 +222,63 @@ export default function ServerDetailPage({ params }: { params: { id: string } })
         {/* ── Containers ── */}
         <TabsContent value="containers" className="mt-4">
           <Card className="glass-card">
-            <CardContent className="py-12 text-center">
-              <Package className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
-              <p className="font-medium">No containers data</p>
-              <p className="text-sm text-muted-foreground mt-1">Container list will appear when the server is online and metrics are collected.</p>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm">Running Containers</CardTitle>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => refetchContainers()}>
+                  <RefreshCw className={cn("w-3.5 h-3.5", containersLoading && "animate-spin")} />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {containersLoading ? (
+                <div className="space-y-2">
+                  {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+                </div>
+              ) : !containers?.length ? (
+                <div className="py-10 text-center">
+                  <Package className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+                  <p className="font-medium text-sm">No running containers</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {server?.status !== "online" ? "Server must be online to fetch containers." : "No containers are currently running on this server."}
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-border/50 text-muted-foreground">
+                        <th className="pb-2 text-left font-medium">Name</th>
+                        <th className="pb-2 text-left font-medium">Image</th>
+                        <th className="pb-2 text-left font-medium">Status</th>
+                        <th className="pb-2 text-left font-medium">Ports</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/30">
+                      {containers.map((c) => (
+                        <tr key={c.id} className="hover:bg-muted/30 transition-colors">
+                          <td className="py-2.5 pr-4 font-mono font-medium">{c.name}</td>
+                          <td className="py-2.5 pr-4 text-muted-foreground">{c.image}</td>
+                          <td className="py-2.5 pr-4">
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "text-[10px] h-5",
+                                c.status.toLowerCase().includes("up") ? "border-emerald-500/50 text-emerald-500" : "border-amber-500/50 text-amber-500"
+                              )}
+                            >
+                              {c.status}
+                            </Badge>
+                          </td>
+                          <td className="py-2.5 font-mono text-muted-foreground">
+                            {c.ports || "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

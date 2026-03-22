@@ -164,8 +164,32 @@ public record CostRecordDto(
     decimal Amount,
     string Currency,
     string Period,
-    DateTime RecordedAt
+    DateTime RecordedAt,
+    string Category = "compute"
 );
+
+// ── Cost Dashboard ────────────────────────────────────────────────────────────
+
+public record CostDashboardDto(
+    decimal TotalPeriodCost,
+    int LineItemCount,
+    decimal CurrentMonthCost,
+    decimal ForecastMonthCost,
+    decimal ChangePercent,
+    List<CostTrendPoint> Trend,
+    List<CostByCategory> ByCategory,
+    List<CostAnomaly> Anomalies,
+    List<CostOptimizationTip> OptimizationTips
+);
+
+public record CostTrendPoint(string Date, decimal Amount, decimal? Forecast = null);
+
+public record CostByCategory(string Category, decimal Amount, double Percent);
+
+public record CostAnomaly(string Date, string ResourceType, decimal Amount,
+    decimal ExpectedAmount, double ZScore);
+
+public record CostOptimizationTip(string Title, string Description, decimal EstimatedSavings);
 
 public record ServiceDto(
     Guid Id,

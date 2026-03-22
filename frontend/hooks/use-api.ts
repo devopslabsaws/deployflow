@@ -100,6 +100,7 @@ export const queryKeys = {
   sshKeys: () => ["ssh-keys"] as const,
   team: () => ["team"] as const,
   costs: (params?: any) => ["costs", params] as const,
+  costDashboard: (period: string) => ["costs", "dashboard", period] as const,
   stats: () => ["stats"] as const,
 };
 
@@ -289,6 +290,18 @@ export function useServers() {
         memoryGB: s.memoryGB ?? s.memoryGb ?? 0,
         diskGB: s.diskGB ?? s.diskGb ?? 0,
         port: s.port ?? s.sshPort ?? 22,
+        // Wrap usage percentages into metrics object so ServerCard renders the bars
+        metrics: {
+          cpuUsagePercent: s.cpuUsagePercent ?? 0,
+          memoryUsagePercent: s.memoryUsagePercent ?? 0,
+          diskUsagePercent: s.diskUsagePercent ?? 0,
+          activeContainers: s.activeContainers ?? 0,
+          networkInMbps: 0,
+          networkOutMbps: 0,
+          uptimeSeconds: 0,
+          loadAverage: [],
+          timestamp: s.lastHealthCheckAt ?? new Date().toISOString(),
+        },
       }));
     },
     staleTime: 60_000,
@@ -368,6 +381,38 @@ export function useRemoveServer() {
   return useMutation({
     mutationFn: (id: string) => apiClient.delete(`/servers/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.servers.all }),
+  });
+}
+
+export interface ContainerInfo {
+  id: string;
+  name: string;
+  image: string;
+  status: string;
+  ports: string;
+}
+
+export function useServerContainers(serverId: string, enabled = true) {
+  return useQuery({
+    queryKey: [...queryKeys.servers.detail(serverId), "containers"],
+    queryFn: async (): Promise<ContainerInfo[]> => {
+      const result = await apiClient.post<{ stdOut: string; stdErr: string; exitCode: number; success: boolean }>(
+        `/servers/${serverId}/exec`,
+        { command: "docker ps --format '{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}'" }
+      );
+      if (!result.stdOut?.trim()) return [];
+      return result.stdOut
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          const [id = "", name = "", image = "", status = "", ports = ""] = line.split("|");
+          return { id: id.substring(0, 12), name, image, status, ports };
+        });
+    },
+    enabled: !!serverId && enabled,
+    staleTime: 15_000,
+    refetchInterval: enabled ? 15_000 : false,
   });
 }
 
@@ -677,10 +722,64 @@ export function useAuditLogs(params?: { page?: number; pageSize?: number; resour
 
 // ─── Cost Monitoring ──────────────────────────────────────────────────────────
 
+export interface CostTrendPoint {
+  date: string;
+  amount: number;
+  forecast?: number;
+}
+
+export interface CostByCategory {
+  category: string;
+  amount: number;
+  percent: number;
+}
+
+export interface CostAnomaly {
+  date: string;
+  resourceType: string;
+  amount: number;
+  expectedAmount: number;
+  zScore: number;
+}
+
+export interface CostOptimizationTip {
+  title: string;
+  description: string;
+  estimatedSavings: number;
+}
+
+export interface CostDashboard {
+  totalPeriodCost: number;
+  lineItemCount: number;
+  currentMonthCost: number;
+  forecastMonthCost: number;
+  changePercent: number;
+  trend: CostTrendPoint[];
+  byCategory: CostByCategory[];
+  anomalies: CostAnomaly[];
+  optimizationTips: CostOptimizationTip[];
+}
+
 export function useCostRecords(params?: { period?: string; projectId?: string }) {
   return useQuery({
     queryKey: queryKeys.costs(params),
-    queryFn: () => apiClient.get<CostRecord[]>("/costs", { params }),
+    // Map backend CostRecordDto fields to the shape the old costs page expected
+    queryFn: async () => {
+      const items = await apiClient.get<any[]>("/costs", { params });
+      return (items ?? []).map((r: any): CostRecord => ({
+        ...r,
+        provider: r.provider ?? r.resourceType ?? "server",
+        totalCost: r.totalCost ?? r.amount ?? 0,
+      }));
+    },
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useCostDashboard(period = "3m") {
+  return useQuery({
+    queryKey: [...queryKeys.costs({ period }), "dashboard"],
+    queryFn: () => apiClient.get<CostDashboard>("/costs/dashboard", { params: { period } }),
     staleTime: 5 * 60_000,
   });
 }
@@ -719,12 +818,52 @@ export function useResolveAlert() {
   });
 }
 
+export interface AggregatedContainer extends ContainerInfo {
+  serverId: string;
+  serverName: string;
+}
+
 export function useContainers(projectId?: string) {
+  // Fetch all online servers and aggregate docker ps from each
+  const { data: servers } = useServers();
+  const onlineServers = servers?.filter((s) => s.status === "online") ?? [];
+
   return useQuery({
-    queryKey: ["containers", projectId],
-    queryFn: () =>
-      apiClient.get<Container[]>("/containers", projectId ? { params: { projectId } } : undefined),
+    queryKey: ["containers", "aggregated", projectId, onlineServers.map((s) => s.id).join(",")],
+    queryFn: async (): Promise<AggregatedContainer[]> => {
+      if (!onlineServers.length) return [];
+      const results = await Promise.allSettled(
+        onlineServers.map(async (server) => {
+          const result = await apiClient.post<{ stdOut: string; stdErr: string; exitCode: number; success: boolean }>(
+            `/servers/${server.id}/exec`,
+            { command: "docker ps --format '{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}|{{.RunningFor}}'" }
+          );
+          if (!result.stdOut?.trim()) return [] as AggregatedContainer[];
+          return result.stdOut
+            .trim()
+            .split("\n")
+            .filter(Boolean)
+            .map((line): AggregatedContainer => {
+              const [id = "", name = "", image = "", status = "", ports = "", since = ""] = line.split("|");
+              return {
+                id: id.substring(0, 12),
+                name,
+                image,
+                status,
+                ports,
+                serverId: server.id,
+                serverName: server.name,
+              };
+            });
+        })
+      );
+      return results
+        .filter((r): r is PromiseFulfilledResult<AggregatedContainer[]> => r.status === "fulfilled")
+        .flatMap((r) => r.value);
+    },
+    enabled: onlineServers.length > 0,
     staleTime: 30_000,
+    refetchInterval: 30_000,
   });
 }
 

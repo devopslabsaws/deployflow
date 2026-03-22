@@ -85,7 +85,12 @@ public class ServerHealthCheckService : BackgroundService
                     "echo \"DOCKER:$(docker --version 2>/dev/null | cut -d' ' -f3 | tr -d ',;')\";" +
                     "echo \"LOAD:$(head -1 /proc/loadavg 2>/dev/null | cut -d' ' -f1)\";" +
                     "echo \"MEM:$(free -m 2>/dev/null | grep 'Mem:' | tr -s ' ' | cut -d' ' -f2-3)\";" +
-                    "echo \"DISK:$(df -P / 2>/dev/null | tail -1 | tr -s ' ' | cut -d' ' -f5 | tr -d '%')\"";
+                    "echo \"DISK:$(df -P / 2>/dev/null | tail -1 | tr -s ' ' | cut -d' ' -f5 | tr -d '%')\";" +
+                    "echo \"CPU_CORES:$(nproc 2>/dev/null)\";" +
+                    "echo \"MEM_TOTAL_MB:$(free -m 2>/dev/null | grep 'Mem:' | tr -s ' ' | cut -d' ' -f2)\";" +
+                    "echo \"DISK_TOTAL_GB:$(df -BG / 2>/dev/null | tail -1 | tr -s ' ' | cut -d' ' -f2 | tr -d 'G')\";" +
+                    // Azure/AWS/GCP IMDS region detection (1s timeout, silent failure on non-cloud)
+                    "echo \"REGION:$(curl -sf --max-time 1 -H 'Metadata:true' 'http://169.254.169.254/metadata/instance/compute/location?api-version=2021-11-01&format=text' 2>/dev/null || echo '')\";";
 
                 var result = await ssh.ExecuteCommandAsync(
                     server.IpAddress, server.SshPort, server.SshUser ?? "root", privateKey, infoCmd, ct);
@@ -104,6 +109,7 @@ public class ServerHealthCheckService : BackgroundService
 
                     var os     = info.TryGetValue("os",     out var osV) && !string.IsNullOrWhiteSpace(osV) ? osV : null;
                     var docker = info.TryGetValue("docker", out var dV)  && !string.IsNullOrWhiteSpace(dV)  ? dV  : null;
+                    var region = info.TryGetValue("region", out var rV)  && !string.IsNullOrWhiteSpace(rV)  ? rV  : null;
 
                     double cpuPct = 0;
                     if (info.TryGetValue("load", out var lV) &&
@@ -127,7 +133,17 @@ public class ServerHealthCheckService : BackgroundService
                         double.TryParse(diskV, System.Globalization.NumberStyles.Any,
                             System.Globalization.CultureInfo.InvariantCulture, out diskPct);
 
-                    server.SetOnline(docker, os);
+                    // Update actual hardware specs from live SSH data
+                    int cpuCores = 0, memGb = 0, diskGb = 0;
+                    if (info.TryGetValue("cpu_cores", out var coresV))
+                        int.TryParse(coresV, out cpuCores);
+                    if (info.TryGetValue("mem_total_mb", out var mtV) && int.TryParse(mtV, out var memTotalMb))
+                        memGb = (memTotalMb + 512) / 1024; // round MB → GB
+                    if (info.TryGetValue("disk_total_gb", out var dtV))
+                        int.TryParse(dtV, out diskGb);
+                    server.UpdateSpecs(cpuCores, memGb, diskGb);
+
+                    server.SetOnline(docker, os, region);
                     server.UpdateMetrics(cpuPct, memPct, diskPct, server.ActiveContainers);
                 }
                 else

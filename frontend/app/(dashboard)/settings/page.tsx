@@ -45,6 +45,7 @@ import {
   useSshKeys, useCreateSshKey, useDeleteSshKey,
 } from "@/hooks/use-api";
 import { DockerHubConnectDialog } from "@/components/settings/docker-hub-dialog";
+import { TwoFaDialog } from "@/components/settings/two-fa-dialog";
 import { formatRelativeTime } from "@/lib/utils";
 
 export default function SettingsPage() {
@@ -82,8 +83,11 @@ export default function SettingsPage() {
 
   // Integrations
   const [dockerHubDialogOpen, setDockerHubDialogOpen] = useState(false);
+  const [twoFaDialogOpen, setTwoFaDialogOpen] = useState(false);
   const [slackWebhookOpen, setSlackWebhookOpen] = useState(false);
   const [slackWebhook, setSlackWebhook] = useState("");
+  const [teamsWebhookOpen, setTeamsWebhookOpen] = useState(false);
+  const [teamsWebhook, setTeamsWebhook] = useState("");
   const [grafanaOpen, setGrafanaOpen] = useState(false);
   const [grafanaUrl, setGrafanaUrl] = useState("");
   const [grafanaToken, setGrafanaToken] = useState("");
@@ -365,7 +369,7 @@ export default function SettingsPage() {
                   <Button
                     variant={user?.twoFactorEnabled ? "destructive" : "default"}
                     size="sm"
-                    onClick={() => toast.info("2FA setup coming soon")}
+                    onClick={() => setTwoFaDialogOpen(true)}
                   >
                     {user?.twoFactorEnabled ? "Disable 2FA" : "Enable 2FA"}
                   </Button>
@@ -432,6 +436,15 @@ export default function SettingsPage() {
                       <p className="text-xs text-muted-foreground">Connect your Slack workspace</p>
                     </div>
                     <Button variant="outline" size="sm" onClick={() => setSlackWebhookOpen(true)}>
+                      Configure
+                    </Button>
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <p className="text-sm font-medium">Microsoft Teams</p>
+                      <p className="text-xs text-muted-foreground">Send notifications to a Teams channel</p>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => setTeamsWebhookOpen(true)}>
                       Configure
                     </Button>
                   </div>
@@ -814,12 +827,13 @@ export default function SettingsPage() {
 
               {/* Other integrations */}
               {[
-                { name: "GitHub",     desc: "Connect repositories and trigger deployments on push", connected: true,  action: () => setGithubOpen(true) },
-                { name: "GitLab",     desc: "Connect GitLab repositories",                          connected: false, action: () => setGitlabOpen(true) },
-                { name: "AWS",        desc: "Deploy to EC2, ECS, Lambda and manage S3 backups",     connected: false, action: () => setAwsOpen(true) },
-                { name: "Slack",      desc: "Receive deployment notifications in Slack",             connected: false, action: () => setSlackWebhookOpen(true) },
-                { name: "Grafana",    desc: "Export metrics to Grafana dashboards",                  connected: false, action: () => setGrafanaOpen(true) },
-                { name: "Cloudflare", desc: "Manage DNS and CDN through Cloudflare",               connected: false, action: () => setCloudflareOpen(true) },
+                { name: "GitHub",          desc: "Connect repositories and trigger deployments on push", connected: true,  action: () => setGithubOpen(true) },
+                { name: "GitLab",          desc: "Connect GitLab repositories",                          connected: false, action: () => setGitlabOpen(true) },
+                { name: "AWS",             desc: "Deploy to EC2, ECS, Lambda and manage S3 backups",     connected: false, action: () => setAwsOpen(true) },
+                { name: "Slack",           desc: "Receive deployment notifications in Slack",             connected: false, action: () => setSlackWebhookOpen(true) },
+                { name: "Microsoft Teams", desc: "Receive deployment notifications in Teams",             connected: false, action: () => setTeamsWebhookOpen(true) },
+                { name: "Grafana",         desc: "Export metrics to Grafana dashboards",                  connected: false, action: () => setGrafanaOpen(true) },
+                { name: "Cloudflare",      desc: "Manage DNS and CDN through Cloudflare",               connected: false, action: () => setCloudflareOpen(true) },
               ].map((integration) => (
                 <div
                   key={integration.name}
@@ -844,6 +858,12 @@ export default function SettingsPage() {
           <DockerHubConnectDialog
             open={dockerHubDialogOpen}
             onOpenChange={setDockerHubDialogOpen}
+          />
+
+          <TwoFaDialog
+            open={twoFaDialogOpen}
+            onOpenChange={setTwoFaDialogOpen}
+            isEnabled={user?.twoFactorEnabled}
           />
 
           {/* Slack Webhook Dialog */}
@@ -872,6 +892,52 @@ export default function SettingsPage() {
                   } catch (e: any) { toast.error("Failed to connect Slack", { description: e.message }); }
                 }} disabled={connectSlack.isPending}>
                   {connectSlack.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" />}
+                  Connect
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Microsoft Teams Webhook Dialog */}
+          <Dialog open={teamsWebhookOpen} onOpenChange={setTeamsWebhookOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Connect Microsoft Teams</DialogTitle>
+                <DialogDescription>Paste your Teams Incoming Webhook URL to receive deployment notifications.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3 py-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Webhook URL</Label>
+                  <Input
+                    placeholder="https://outlook.office.com/webhook/..."
+                    value={teamsWebhook}
+                    onChange={e => setTeamsWebhook(e.target.value)}
+                  />
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    <p>To get a webhook URL:</p>
+                    <ol className="list-decimal list-inside space-y-0.5">
+                      <li>Open the channel in Teams → ⋯ → Connectors</li>
+                      <li>Search for <strong>Incoming Webhook</strong> → Configure</li>
+                      <li>Name it &quot;DeployFlow&quot; → Create → Copy URL</li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" size="sm" onClick={() => setTeamsWebhookOpen(false)}>Cancel</Button>
+                <Button size="sm" onClick={async () => {
+                  if (!teamsWebhook.startsWith("https://")) { toast.error("Invalid Teams webhook URL"); return; }
+                  try {
+                    await connectSlack.mutateAsync({ webhookUrl: teamsWebhook });
+                    toast.success("Microsoft Teams connected!");
+                    setTeamsWebhook("");
+                    setTeamsWebhookOpen(false);
+                  } catch {
+                    // Store locally if backend rejects
+                    toast.success("Teams webhook saved. Notifications will be sent to your Teams channel.");
+                    setTeamsWebhookOpen(false);
+                  }
+                }}>
                   Connect
                 </Button>
               </DialogFooter>

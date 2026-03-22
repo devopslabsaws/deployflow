@@ -94,11 +94,20 @@ public class Server : AggregateRoot
         Touch();
     }
 
-    public void SetOnline(string? dockerVersion = null, string? os = null)
+    public void UpdateSpecs(int cpuCores, int memoryGb, int diskGb)
+    {
+        if (cpuCores > 0) CpuCount = cpuCores;
+        if (memoryGb > 0) MemoryGb = memoryGb;
+        if (diskGb > 0) DiskGb = diskGb;
+        Touch();
+    }
+
+    public void SetOnline(string? dockerVersion = null, string? os = null, string? region = null)
     {
         Status = ServerStatus.Online;
         if (dockerVersion is not null) DockerVersion = dockerVersion;
         if (os is not null) Os = os;
+        if (region is not null && Region is null) Region = region;
         LastHealthCheckAt = DateTime.UtcNow;
         Touch();
     }

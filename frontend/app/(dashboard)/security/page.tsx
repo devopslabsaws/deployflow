@@ -19,9 +19,13 @@ import {
 import { useSshKeys, useCreateSshKey, useDeleteSshKey } from "@/hooks/use-api";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TwoFaDialog } from "@/components/settings/two-fa-dialog";
+import { useAuthStore } from "@/store/auth-store";
 
 export default function SecurityPage() {
+  const { user } = useAuthStore();
   const [addKeyOpen, setAddKeyOpen] = useState(false);
+  const [twoFaOpen, setTwoFaOpen] = useState(false);
   const [keyForm, setKeyForm] = useState({ name: "", privateKey: "", passphrase: "" });
   const [showKey, setShowKey] = useState(false);
   const { data: sshKeys, isLoading } = useSshKeys();
@@ -146,14 +150,22 @@ export default function SecurityPage() {
                     <p className="font-medium text-sm">Authenticator App</p>
                     <p className="text-xs text-muted-foreground">Use Google Authenticator, Authy, or similar</p>
                   </div>
+                    {user?.twoFactorEnabled && (
+                      <span className="ml-1 text-xs text-emerald-500 font-medium">● Enabled</span>
+                    )}
+                  </div>
+                  <Button
+                    variant={user?.twoFactorEnabled ? "destructive" : "outline"}
+                    size="sm"
+                    onClick={() => setTwoFaOpen(true)}
+                  >
+                    <Shield className="h-4 w-4 mr-2" />
+                    {user?.twoFactorEnabled ? "Disable" : "Enable"}
+                  </Button>
                 </div>
-                <Button variant="outline" size="sm">
-                  <Shield className="h-4 w-4 mr-2" />Enable
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
         {/* Audit Log */}
         <TabsContent value="audit" className="mt-4">
@@ -212,6 +224,12 @@ export default function SecurityPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <TwoFaDialog
+        open={twoFaOpen}
+        onOpenChange={setTwoFaOpen}
+        isEnabled={user?.twoFactorEnabled}
+      />
     </div>
   );
 }

@@ -60,6 +60,8 @@ public record TwoFactorSetupDto(
     string[] BackupCodes
 );
 
+public record Enable2FaRequest(string Code);
+
 public record TeamMemberDto(
     Guid Id,
     string Name,

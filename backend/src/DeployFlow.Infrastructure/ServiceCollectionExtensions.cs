@@ -83,6 +83,7 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<ServerHealthCheckService>();
         services.AddHostedService<AlertEvaluatorService>();
         services.AddHostedService<ContainerMetricsCollectorService>();
+        services.AddHostedService<CostCalculationService>();
 
         return services;
     }

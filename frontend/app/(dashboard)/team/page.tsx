@@ -22,6 +22,10 @@ import {
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useTeamMembers, useInviteMember, useUpdateMemberRole, useRemoveMember } from "@/hooks/use-api";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -37,6 +41,9 @@ const roleConfig = {
 export default function TeamPage() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteForm, setInviteForm] = useState({ email: "", name: "", role: "developer" });
+  const [removeDialog, setRemoveDialog] = useState<{ open: boolean; memberId: string; memberName: string }>({
+    open: false, memberId: "", memberName: "",
+  });
   const { data: members, isLoading } = useTeamMembers();
   const invite = useInviteMember();
   const updateRole = useUpdateMemberRole();
@@ -66,13 +73,18 @@ export default function TeamPage() {
     }
   };
 
-  const handleRemove = async (userId: string, name: string) => {
-    if (!confirm(`Remove ${name} from the team?`)) return;
+  const handleRemove = (userId: string, name: string) => {
+    setRemoveDialog({ open: true, memberId: userId, memberName: name });
+  };
+
+  const confirmRemove = async () => {
     try {
-      await removeMember.mutateAsync(userId);
-      toast.success(`${name} removed from team.`);
+      await removeMember.mutateAsync(removeDialog.memberId);
+      toast.success(`${removeDialog.memberName} removed from team.`);
     } catch (e: any) {
       toast.error("Failed to remove member", { description: e.message });
+    } finally {
+      setRemoveDialog({ open: false, memberId: "", memberName: "" });
     }
   };
 
@@ -215,6 +227,27 @@ export default function TeamPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Remove Confirmation */}
+      <AlertDialog open={removeDialog.open} onOpenChange={(open) => !open && setRemoveDialog((d) => ({ ...d, open: false }))}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove team member?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove <strong>{removeDialog.memberName}</strong> from the team. They will lose access to all projects and resources immediately.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmRemove}
+            >
+              {removeMember.isPending ? "Removing…" : "Remove"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

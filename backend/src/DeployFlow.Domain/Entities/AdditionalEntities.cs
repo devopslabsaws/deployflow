@@ -23,12 +23,13 @@ public class ServerMetrics : BaseEntity
 
 public class CostRecord : TenantEntity
 {
+    // ResourceType holds the billing category: "compute", "memory", "storage", "database", "container"
     public string ResourceType { get; set; } = default!;
     public string ResourceName { get; set; } = default!;
     public Guid? ResourceId { get; set; }
     public decimal Amount { get; set; }
     public string Currency { get; set; } = "USD";
-    public string Period { get; set; } = default!; // "2024-01"
+    public string Period { get; set; } = default!;   // "2024-01"
     public DateTime RecordedAt { get; set; } = DateTime.UtcNow;
 }
 

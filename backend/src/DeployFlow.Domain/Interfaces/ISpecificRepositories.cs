@@ -116,6 +116,7 @@ public interface ISshKeyRepository : ITenantRepository<SshKey>
 public interface ICostRecordRepository : IRepository<CostRecord>
 {
     Task<decimal> GetMonthlyCostAsync(Guid tenantId, int year, int month, CancellationToken ct = default);
+    Task<IReadOnlyList<CostRecord>> GetByDateRangeAsync(Guid tenantId, DateTime from, DateTime to, CancellationToken ct = default);
 }
 
 // Value object returned by deployment stats query

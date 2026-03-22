@@ -226,7 +226,7 @@ public class DeploymentRunnerService : BackgroundService
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("#!/bin/bash");
         sb.AppendLine("set -e");
-        sb.AppendLine($"APP_DIR=\"/opt/deployflow/{project.Slug}\"");
+        sb.AppendLine($"APP_DIR=\"$HOME/deployflow/{project.Slug}\"");
         sb.AppendLine("mkdir -p \"$APP_DIR\"");
         sb.AppendLine($"cd \"$APP_DIR\"");
 

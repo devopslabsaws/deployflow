@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDeployment } from "@/hooks/use-api";
-import { formatRelativeTime, formatDuration } from "@/lib/utils";
+import { formatRelativeTime, formatDuration, formatDate } from "@/lib/utils";
 import Link from "next/link";
 
 const statusConfig: Record<string, { icon: React.ElementType; color: string; label: string }> = {
@@ -61,7 +61,13 @@ export default function DeploymentDetailPage() {
             )}
           </div>
           <p className="text-sm text-muted-foreground">
-            Deployment {deployment.id.slice(0, 8)} &middot; {formatRelativeTime(deployment.createdAt)}
+            Deployment {deployment.id.slice(0, 8)}
+            {" · "}
+            <span title={formatDate(deployment.createdAt, "PPpp")} className="cursor-help border-b border-dashed border-muted-foreground/50">
+              {formatRelativeTime(deployment.createdAt)}
+            </span>
+            {" · "}
+            <span className="text-xs">{formatDate(deployment.createdAt, "MMM d, yyyy HH:mm")}</span>
           </p>
         </motion.div>
       ) : (

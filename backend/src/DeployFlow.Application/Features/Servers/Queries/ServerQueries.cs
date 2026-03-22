@@ -11,9 +11,9 @@ public record GetServersQuery(
     int PageSize = 20,
     string? Status = null,
     string? Provider = null
-) : IRequest<Result<PaginatedResponse<ServerSummaryDto>>>;
+) : IRequest<Result<PaginatedResponse<ServerDto>>>;
 
-public class GetServersQueryHandler : IRequestHandler<GetServersQuery, Result<PaginatedResponse<ServerSummaryDto>>>
+public class GetServersQueryHandler : IRequestHandler<GetServersQuery, Result<PaginatedResponse<ServerDto>>>
 {
     private readonly IUnitOfWork _uow;
     private readonly ICurrentUser _currentUser;
@@ -26,7 +26,7 @@ public class GetServersQueryHandler : IRequestHandler<GetServersQuery, Result<Pa
         _mapper = mapper;
     }
 
-    public async Task<Result<PaginatedResponse<ServerSummaryDto>>> Handle(GetServersQuery request, CancellationToken ct)
+    public async Task<Result<PaginatedResponse<ServerDto>>> Handle(GetServersQuery request, CancellationToken ct)
     {
         var (servers, total) = await _uow.Servers.GetPagedAsync(
             tenantId: _currentUser.TenantId,
@@ -36,9 +36,9 @@ public class GetServersQueryHandler : IRequestHandler<GetServersQuery, Result<Pa
             provider: request.Provider,
             ct: ct);
 
-        var dtos = _mapper.Map<List<ServerSummaryDto>>(servers);
-        return Result<PaginatedResponse<ServerSummaryDto>>.Success(
-            PaginatedResponse<ServerSummaryDto>.Create(dtos, total, request.Page, request.PageSize));
+        var dtos = _mapper.Map<List<ServerDto>>(servers);
+        return Result<PaginatedResponse<ServerDto>>.Success(
+            PaginatedResponse<ServerDto>.Create(dtos, total, request.Page, request.PageSize));
     }
 }
 

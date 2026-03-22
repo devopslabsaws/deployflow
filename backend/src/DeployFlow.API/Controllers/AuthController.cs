@@ -1,11 +1,14 @@
 using DeployFlow.Application.Common;
 using DeployFlow.Application.DTOs;
 using DeployFlow.Application.Features.Auth.Commands;
+using DeployFlow.Domain.Entities;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Configuration;
+using System.Linq;
 
 namespace DeployFlow.API.Controllers;
 
@@ -13,10 +16,12 @@ namespace DeployFlow.API.Controllers;
 public class AuthController : BaseController
 {
     private readonly IConfiguration _config;
+    private readonly UserManager<ApplicationUser> _userManager;
 
-    public AuthController(IMediator mediator, IConfiguration config) : base(mediator)
+    public AuthController(IMediator mediator, IConfiguration config, UserManager<ApplicationUser> userManager) : base(mediator)
     {
         _config = config;
+        _userManager = userManager;
     }
 
     /// <summary>Login with email and password.</summary>
@@ -254,5 +259,62 @@ public class AuthController : BaseController
             $"?accessToken={Uri.EscapeDataString(tokens.AccessToken)}" +
             $"&refreshToken={Uri.EscapeDataString(tokens.RefreshToken)}" +
             $"&user={userJson}");
+    }
+
+    // ── Two-Factor Authentication ────────────────────────────────────────────
+
+    /// <summary>Generate a new TOTP authenticator key and return the QR code URI.</summary>
+    [HttpGet("2fa/setup")]
+    [Authorize]
+    public async Task<IActionResult> TwoFaSetup()
+    {
+        var user = await _userManager.GetUserAsync(User);
+        if (user is null) return Unauthorized();
+
+        await _userManager.ResetAuthenticatorKeyAsync(user);
+        var key = await _userManager.GetAuthenticatorKeyAsync(user);
+        if (key is null) return StatusCode(500, new { error = "Failed to generate authenticator key." });
+
+        // Format key as groups of 4 for readability
+        var formattedKey = string.Join(" ",
+            System.Text.RegularExpressions.Regex.Matches(key.ToUpperInvariant(), ".{1,4}")
+                .Select(m => m.Value));
+
+        var issuer  = "DeployFlow";
+        var account = Uri.EscapeDataString(user.Email ?? user.UserName ?? "user");
+        var issuerE = Uri.EscapeDataString(issuer);
+        var qrUri   = $"otpauth://totp/{issuerE}:{account}?secret={key}&issuer={issuerE}&algorithm=SHA1&digits=6&period=30";
+
+        return Ok(new { secret = formattedKey, qrCodeUri = qrUri, email = user.Email });
+    }
+
+    /// <summary>Verify the TOTP code and enable 2FA for the current user.</summary>
+    [HttpPost("2fa/enable")]
+    [Authorize]
+    public async Task<IActionResult> TwoFaEnable([FromBody] Enable2FaRequest request)
+    {
+        var user = await _userManager.GetUserAsync(User);
+        if (user is null) return Unauthorized();
+
+        var provider  = _userManager.Options.Tokens.AuthenticatorTokenProvider;
+        var isValid   = await _userManager.VerifyTwoFactorTokenAsync(user, provider, request.Code.Replace(" ", "").Replace("-", ""));
+
+        if (!isValid)
+            return BadRequest(new { error = "Invalid verification code. Please try again." });
+
+        await _userManager.SetTwoFactorEnabledAsync(user, true);
+        return Ok(new { success = true, message = "Two-factor authentication has been enabled." });
+    }
+
+    /// <summary>Disable 2FA for the current user.</summary>
+    [HttpPost("2fa/disable")]
+    [Authorize]
+    public async Task<IActionResult> TwoFaDisable()
+    {
+        var user = await _userManager.GetUserAsync(User);
+        if (user is null) return Unauthorized();
+
+        await _userManager.SetTwoFactorEnabledAsync(user, false);
+        return Ok(new { success = true, message = "Two-factor authentication has been disabled." });
     }
 }
