@@ -150,4 +150,55 @@ public class Server : AggregateRoot
         KubernetesEnabled = true;
         Touch();
     }
+
+    // ── Docker Cleanup configuration ─────────────────────────────────────────
+
+    /// <summary>Cron expression for automatic Docker cleanup (e.g. "0 0 * * *").</summary>
+    public string DockerCleanupFrequency { get; private set; } = "0 0 * * *";
+
+    /// <summary>docker system prune --force (removes stopped containers, dangling images, unused networks).</summary>
+    public bool DockerCleanupForce { get; private set; } = true;
+
+    /// <summary>Also remove unused volumes (docker volume prune). Use with caution.</summary>
+    public bool DeleteUnusedVolumes { get; private set; } = false;
+
+    /// <summary>Also remove unused networks.</summary>
+    public bool DeleteUnusedNetworks { get; private set; } = false;
+
+    /// <summary>Disable retaining old application images (removes all previous deployments' images).</summary>
+    public bool DisableAppImageRetention { get; private set; } = false;
+
+    public void UpdateDockerCleanup(
+        string? frequency = null,
+        bool? force = null,
+        bool? deleteVolumes = null,
+        bool? deleteNetworks = null,
+        bool? disableRetention = null)
+    {
+        if (frequency is not null) DockerCleanupFrequency = frequency;
+        if (force.HasValue) DockerCleanupForce = force.Value;
+        if (deleteVolumes.HasValue) DeleteUnusedVolumes = deleteVolumes.Value;
+        if (deleteNetworks.HasValue) DeleteUnusedNetworks = deleteNetworks.Value;
+        if (disableRetention.HasValue) DisableAppImageRetention = disableRetention.Value;
+        Touch();
+    }
+
+    // ── Cloudflare Tunnel configuration ──────────────────────────────────────
+
+    /// <summary>Cloudflare Tunnel API token (encrypted at rest).</summary>
+    public string? CloudflareTunnelToken { get; private set; }
+
+    /// <summary>Configured SSH domain exposed through the Cloudflare Tunnel.</summary>
+    public string? CloudflareSshDomain { get; private set; }
+
+    /// <summary>Whether the tunnel was configured manually (vs. automated).</summary>
+    public bool CloudflareTunnelManual { get; private set; } = false;
+
+    public void ConfigureCloudflareTunnel(string? token, string? sshDomain, bool manual = false)
+    {
+        CloudflareTunnelToken = token;
+        CloudflareSshDomain   = sshDomain;
+        CloudflareTunnelManual = manual;
+        Touch();
+    }
 }

@@ -8,7 +8,7 @@ import {
   ArrowLeft, Rocket, Settings, GitBranch, ExternalLink,
   CheckCircle2, XCircle, AlertTriangle, Clock, RefreshCw,
   Globe, Code2, Server, Calendar, Activity, StopCircle, Tag,
-  Terminal, Play,
+  Terminal, Play, Loader2, Webhook, CalendarClock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { useProject, useDeployments, useCancelDeployment, queryKeys } from "@/hooks/use-api";
+import { useActionFeedback } from "@/hooks/use-action-feedback";
 import { apiClient } from "@/lib/api-client";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -45,6 +46,11 @@ export default function ProjectDetailPage() {
     onError: (e: any) =>
       toast.error("Failed to trigger deployment", { description: e.message }),
   });
+
+  const deployFeedback = useActionFeedback(
+    () => triggerDeploy.mutateAsync(),
+    { successDuration: 3000 },
+  );
 
   if (projectLoading) {
     return (
@@ -116,16 +122,34 @@ export default function ProjectDetailPage() {
               <Settings className="h-3.5 w-3.5" />Settings
             </Link>
           </Button>
+          <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" asChild>
+            <Link href={`/projects/${id}/webhooks`}>
+              <Webhook className="h-3.5 w-3.5" />Webhooks
+            </Link>
+          </Button>
+          <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" asChild>
+            <Link href={`/projects/${id}/scheduled-tasks`}>
+              <CalendarClock className="h-3.5 w-3.5" />Tasks
+            </Link>
+          </Button>
           <Button
             size="sm"
-            className="h-8 gap-1.5 text-xs"
-            onClick={() => triggerDeploy.mutate()}
-            disabled={triggerDeploy.isPending || p?.status !== "active"}
+            className={cn(
+              "h-8 gap-1.5 text-xs transition-all",
+              deployFeedback.state === "success" && "bg-emerald-600 hover:bg-emerald-500 text-white",
+              deployFeedback.state === "error" && "bg-destructive hover:bg-destructive/90 text-white",
+            )}
+            onClick={deployFeedback.run}
+            disabled={deployFeedback.state === "loading" || p?.status !== "active"}
           >
-            {triggerDeploy.isPending
-              ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-              : <Rocket className="h-3.5 w-3.5" />}
-            Deploy Now
+            {deployFeedback.state === "loading" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {deployFeedback.state === "success" && <CheckCircle2 className="h-3.5 w-3.5" />}
+            {deployFeedback.state === "error" && <XCircle className="h-3.5 w-3.5" />}
+            {deployFeedback.state === "idle" && <Rocket className="h-3.5 w-3.5" />}
+            {deployFeedback.state === "loading" && "Deploying…"}
+            {deployFeedback.state === "success" && "Deployed!"}
+            {deployFeedback.state === "error" && "Failed"}
+            {deployFeedback.state === "idle" && "Deploy Now"}
           </Button>
         </div>
       </div>
@@ -283,8 +307,8 @@ export default function ProjectDetailPage() {
                   <Button
                     size="sm"
                     className="h-8 gap-1.5 text-xs"
-                    onClick={() => triggerDeploy.mutate()}
-                    disabled={triggerDeploy.isPending}
+                    onClick={deployFeedback.run}
+                    disabled={deployFeedback.state === "loading"}
                   >
                     <Rocket className="h-3 w-3" />Deploy Now
                   </Button>

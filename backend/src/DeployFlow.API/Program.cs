@@ -115,6 +115,8 @@ builder.Services.AddControllers()
 
 // ─── SignalR ──────────────────────────────────────────────────────────────────
 builder.Services.AddSignalR();
+builder.Services.AddSingleton<DeployFlow.Application.Common.IDeploymentLogBroadcaster,
+    DeployFlow.API.Services.SignalRDeploymentLogBroadcaster>();
 
 // ─── Swagger ──────────────────────────────────────────────────────────────────
 builder.Services.AddEndpointsApiExplorer();

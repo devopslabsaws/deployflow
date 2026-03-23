@@ -41,6 +41,10 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
     public DbSet<CostRecord> CostRecords => Set<CostRecord>();
     public DbSet<NotificationConfig> NotificationConfigs => Set<NotificationConfig>();
     public DbSet<RefreshTokenRecord> RefreshTokens => Set<RefreshTokenRecord>();
+    public DbSet<ResourcePermission> ResourcePermissions => Set<ResourcePermission>();
+    public DbSet<Cluster> Clusters => Set<Cluster>();
+    public DbSet<DeployWebhook> DeployWebhooks => Set<DeployWebhook>();
+    public DbSet<ScheduledTask> ScheduledTasks => Set<ScheduledTask>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

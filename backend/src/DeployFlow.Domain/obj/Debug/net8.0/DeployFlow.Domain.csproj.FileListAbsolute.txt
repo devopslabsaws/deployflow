@@ -1,0 +1,14 @@
+D:\LNT\Coolify\backend\src\DeployFlow.Domain\bin\Debug\net8.0\DeployFlow.Domain.deps.json
+D:\LNT\Coolify\backend\src\DeployFlow.Domain\bin\Debug\net8.0\DeployFlow.Domain.dll
+D:\LNT\Coolify\backend\src\DeployFlow.Domain\bin\Debug\net8.0\DeployFlow.Domain.pdb
+D:\LNT\Coolify\backend\src\DeployFlow.Domain\bin\Debug\net8.0\DeployFlow.Domain.xml
+D:\LNT\Coolify\backend\src\DeployFlow.Domain\obj\Debug\net8.0\DeployFlow.Domain.GeneratedMSBuildEditorConfig.editorconfig
+D:\LNT\Coolify\backend\src\DeployFlow.Domain\obj\Debug\net8.0\DeployFlow.Domain.AssemblyInfoInputs.cache
+D:\LNT\Coolify\backend\src\DeployFlow.Domain\obj\Debug\net8.0\DeployFlow.Domain.AssemblyInfo.cs
+D:\LNT\Coolify\backend\src\DeployFlow.Domain\obj\Debug\net8.0\DeployFlow.Domain.csproj.CoreCompileInputs.cache
+D:\LNT\Coolify\backend\src\DeployFlow.Domain\obj\Debug\net8.0\DeployFlow.Domain.dll
+D:\LNT\Coolify\backend\src\DeployFlow.Domain\obj\Debug\net8.0\refint\DeployFlow.Domain.dll
+D:\LNT\Coolify\backend\src\DeployFlow.Domain\obj\Debug\net8.0\DeployFlow.Domain.xml
+D:\LNT\Coolify\backend\src\DeployFlow.Domain\obj\Debug\net8.0\DeployFlow.Domain.pdb
+D:\LNT\Coolify\backend\src\DeployFlow.Domain\obj\Debug\net8.0\ref\DeployFlow.Domain.dll
+D:\LNT\Coolify\backend\src\DeployFlow.Domain\obj\Debug\net8.0\DeployFlow.Domain.sourcelink.json

@@ -145,3 +145,45 @@ public class RollbackDeploymentCommandHandler : IRequestHandler<RollbackDeployme
         return Result<DeploymentDto>.Success(_mapper.Map<DeploymentDto>(rollback));
     }
 }
+
+// ─── Blue/Green Deploy Command ────────────────────────────────────────────────
+
+/// <summary>
+/// Triggers a Blue/Green deployment for a project.
+/// Creates a regular Deployment record (trigger = Manual) then flags it for
+/// blue/green processing in DeploymentRunnerService via the Metadata bag.
+/// </summary>
+public record BlueGreenDeployCommand(Guid ProjectId) : IRequest<Result<DeploymentDto>>;
+
+public class BlueGreenDeployCommandHandler : IRequestHandler<BlueGreenDeployCommand, Result<DeploymentDto>>
+{
+    private readonly IUnitOfWork _uow;
+    private readonly ICurrentUser _currentUser;
+    private readonly IMapper _mapper;
+
+    public BlueGreenDeployCommandHandler(IUnitOfWork uow, ICurrentUser currentUser, IMapper mapper)
+    { _uow = uow; _currentUser = currentUser; _mapper = mapper; }
+
+    public async Task<Result<DeploymentDto>> Handle(BlueGreenDeployCommand request, CancellationToken ct)
+    {
+        var project = await _uow.Projects.GetByIdAsync(request.ProjectId, ct);
+        if (project is null || project.TenantId != _currentUser.TenantId)
+            return Result<DeploymentDto>.Failure("Project not found.", 404);
+
+        var deployment = Deployment.Create(
+            tenantId: _currentUser.TenantId,
+            projectId: project.Id,
+            trigger: DeploymentTrigger.Manual,
+            triggeredBy: _currentUser.UserId);
+
+        // Mark as a blue/green deployment via metadata
+        deployment.Metadata["strategy"] = "blue-green";
+        deployment.Metadata["targetSlot"] = project.ActiveSlot == "blue" ? "green" : "blue";
+
+        await _uow.Deployments.AddAsync(deployment, ct);
+        project.RecordDeployment(deployment.Id, deployment.Status);
+        await _uow.SaveChangesAsync(ct);
+
+        return Result<DeploymentDto>.Success(_mapper.Map<DeploymentDto>(deployment));
+    }
+}

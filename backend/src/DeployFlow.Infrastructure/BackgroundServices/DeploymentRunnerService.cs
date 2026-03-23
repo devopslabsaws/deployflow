@@ -2,6 +2,7 @@ using DeployFlow.Application.Common;
 using DeployFlow.Domain.Entities;
 using DeployFlow.Domain.Interfaces;
 using DeployFlow.Infrastructure.Persistence;
+using DeployFlow.Infrastructure.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -17,12 +18,17 @@ public class DeploymentRunnerService : BackgroundService
 {
     private readonly IServiceProvider _services;
     private readonly ILogger<DeploymentRunnerService> _logger;
+    private readonly IDeploymentLogBroadcaster _broadcaster;
     private static readonly ConcurrentDictionary<Guid, bool> _runningDeployments = new();
 
-    public DeploymentRunnerService(IServiceProvider services, ILogger<DeploymentRunnerService> logger)
+    public DeploymentRunnerService(
+        IServiceProvider services,
+        ILogger<DeploymentRunnerService> logger,
+        IDeploymentLogBroadcaster broadcaster)
     {
         _services = services;
         _logger = logger;
+        _broadcaster = broadcaster;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -61,7 +67,7 @@ public class DeploymentRunnerService : BackgroundService
             if (_runningDeployments.ContainsKey(deployment.Id)) continue;
             if (_runningDeployments.TryAdd(deployment.Id, true))
             {
-                _ = Task.Run(() => RunDeploymentAsync(deployment.Id, ct), ct);
+        _ = Task.Run(() => RunDeploymentAsync(deployment.Id, ct), ct);
             }
         }
     }
@@ -70,10 +76,12 @@ public class DeploymentRunnerService : BackgroundService
     {
         using var scope = _services.CreateScope();
         var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var notification = scope.ServiceProvider.GetRequiredService<INotificationService>();
         var git = scope.ServiceProvider.GetRequiredService<IGitService>();
         var ssh = scope.ServiceProvider.GetRequiredService<ISshService>();
         var encryption = scope.ServiceProvider.GetRequiredService<IEncryptionService>();
+        var blueGreen = scope.ServiceProvider.GetRequiredService<BlueGreenDeploymentService>();
 
         Deployment? deployment = null;
         try
@@ -90,6 +98,7 @@ public class DeploymentRunnerService : BackgroundService
             // Mark as building
             deployment.Start();
             await uow.SaveChangesAsync(ct);
+            await _broadcaster.BroadcastStatusAsync(deploymentId, "building", ct);
 
             await notification.NotifyDeploymentStarted(
                 deployment.TenantId, project.Id, deploymentId, project.Name, ct);
@@ -119,9 +128,10 @@ public class DeploymentRunnerService : BackgroundService
             var privateKey = encryption.Decrypt(sshKey.PrivateKeyEncrypted);
 
             // Clone / pull repo
-            await AddLogAsync(uow, deployment.Id, "📦 Fetching source code...", ct: ct);
+            await AddLogAsync(db, _broadcaster, deployment.Id, "📦 Fetching source code...", ct: ct);
             deployment.SetDeploying();
             await uow.SaveChangesAsync(ct);
+            await _broadcaster.BroadcastStatusAsync(deploymentId, "deploying", ct);
 
             // Get env vars for the project
             var envVars = await uow.EnvVariables.GetByProjectAsync(project.Id, ct);
@@ -130,7 +140,27 @@ public class DeploymentRunnerService : BackgroundService
             // Build the deploy script
             var deployScript = BuildDeployScript(project, envDict);
 
-            await AddLogAsync(uow, deployment.Id, "🔨 Running build commands...", ct: ct);
+            await AddLogAsync(db, _broadcaster, deployment.Id, "🔨 Running build commands...", ct: ct);
+
+            // Blue/Green strategy
+            if (deployment.Metadata.TryGetValue("strategy", out var strategy) && strategy == "blue-green")
+            {
+                var success = await blueGreen.DeployAsync(project, deployment, db, ct);
+                if (!success)
+                {
+                    await FailDeploymentAsync(deployment, project, "Blue/Green deployment failed.", uow, _broadcaster, notification, ct);
+                    return;
+                }
+                var url = project.CustomDomain is not null ? $"https://{project.CustomDomain}" : null;
+                deployment.MarkSucceeded(url);
+                project.RecordDeployment(deployment.Id, DeploymentStatus.Healthy);
+                await uow.SaveChangesAsync(ct);
+                await _broadcaster.BroadcastStatusAsync(deploymentId, "healthy", ct);
+                await AddLogAsync(db, _broadcaster, deployment.Id, "✅ Blue/Green deployment succeeded!", ct: ct);
+                await notification.NotifyDeploymentSucceeded(deployment.TenantId, project.Id, deploymentId, project.Name, url, ct);
+                _logger.LogInformation("Blue/Green deployment {Id} succeeded", deploymentId);
+                return;
+            }
 
             var result = await ssh.ExecuteCommandAsync(
                 server.IpAddress, server.SshPort, server.SshUser, privateKey,
@@ -138,19 +168,23 @@ public class DeploymentRunnerService : BackgroundService
 
             if (result.ExitCode != 0 || !result.Success)
             {
+                await AddLogAsync(db, _broadcaster, deployment.Id,
+                    $"Deploy script failed (exit {result.ExitCode}):\n{result.StdErr}", "stderr", ct);
                 await FailDeploymentAsync(deployment, project,
                     $"Deploy script failed (exit {result.ExitCode}):\n{result.StdErr}",
-                    uow, notification, ct);
+                    uow, _broadcaster, notification, ct);
                 return;
             }
 
-            await AddLogAsync(uow, deployment.Id, result.StdOut, "stdout", ct);
+            await AddLogAsync(db, _broadcaster, deployment.Id, result.StdOut, "stdout", ct);
 
             // Success
             var url = project.CustomDomain is not null ? $"https://{project.CustomDomain}" : null;
             deployment.MarkSucceeded(url);
             project.RecordDeployment(deployment.Id, DeploymentStatus.Healthy);
             await uow.SaveChangesAsync(ct);
+            await _broadcaster.BroadcastStatusAsync(deploymentId, "healthy", ct);
+            await AddLogAsync(db, _broadcaster, deployment.Id, "✅ Deployment succeeded!", ct: ct);
 
             await notification.NotifyDeploymentSucceeded(
                 deployment.TenantId, project.Id, deploymentId, project.Name, url, ct);
@@ -169,7 +203,7 @@ public class DeploymentRunnerService : BackgroundService
                 if (errDeployment is not null)
                 {
                     var project = await errUow.Projects.GetByIdAsync(errDeployment.ProjectId, ct);
-                    await FailDeploymentAsync(errDeployment, project, ex.Message, errUow, errNotif, ct);
+                    await FailDeploymentAsync(errDeployment, project, ex.Message, errUow, _broadcaster, errNotif, ct);
                 }
             }
         }
@@ -184,6 +218,7 @@ public class DeploymentRunnerService : BackgroundService
         Project? project,
         string reason,
         IUnitOfWork uow,
+        IDeploymentLogBroadcaster broadcaster,
         INotificationService notification,
         CancellationToken ct)
     {
@@ -191,6 +226,7 @@ public class DeploymentRunnerService : BackgroundService
         if (project is not null)
             project.RecordDeployment(deployment.Id, DeploymentStatus.Failed);
         await uow.SaveChangesAsync(ct);
+        await broadcaster.BroadcastStatusAsync(deployment.Id, "failed", ct);
 
         if (project is not null)
             await notification.NotifyDeploymentFailed(
@@ -198,13 +234,13 @@ public class DeploymentRunnerService : BackgroundService
     }
 
     private static async Task AddLogAsync(
-        IUnitOfWork uow,
+        ApplicationDbContext db,
+        IDeploymentLogBroadcaster broadcaster,
         Guid deploymentId,
         string message,
         string? stream = null,
         CancellationToken ct = default)
     {
-        // Write deployment log directly - DeploymentLog is a simple entity
         try
         {
             var log = new DeploymentLog
@@ -215,8 +251,9 @@ public class DeploymentRunnerService : BackgroundService
                 Stream = stream,
                 Timestamp = DateTime.UtcNow
             };
-            // Use the deployment's project to save the log via EF
-            await uow.SaveChangesAsync(ct);
+            db.DeploymentLogs.Add(log);
+            await db.SaveChangesAsync(ct);
+            await broadcaster.BroadcastLogAsync(deploymentId, message, stream, ct);
         }
         catch { /* Log failures are non-critical */ }
     }

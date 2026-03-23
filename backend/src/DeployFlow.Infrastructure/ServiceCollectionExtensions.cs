@@ -76,6 +76,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IAuditService, AuditService>();
+        services.AddScoped<IPermissionService, PermissionService>();
+        services.AddScoped<BlueGreenDeploymentService>();
+        services.AddScoped<ClusterService>();
         services.AddHttpClient("notifications");
 
         // Background services

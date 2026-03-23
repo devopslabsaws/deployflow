@@ -31,7 +31,7 @@ const nextConfig = {
         source: '/proxy/:path*',
         // API_INTERNAL_URL is set by docker-compose (http://api:8080).
         // Falls back to local dev port when running outside Docker.
-        destination: `${process.env.API_INTERNAL_URL || 'http://localhost:5011'}/api/:path*`,
+        destination: `${process.env.API_INTERNAL_URL || 'http://localhost:5001'}/api/:path*`,
       },
     ];
   },

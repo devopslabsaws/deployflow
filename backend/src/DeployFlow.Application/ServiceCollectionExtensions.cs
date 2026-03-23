@@ -16,6 +16,7 @@ public static class ServiceCollectionExtensions
             cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly());
             cfg.AddBehavior(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
             cfg.AddBehavior(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+            cfg.AddBehavior(typeof(IPipelineBehavior<,>), typeof(AuditBehavior<,>));
         });
 
         services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
@@ -23,6 +24,91 @@ public static class ServiceCollectionExtensions
         services.AddAutoMapper(Assembly.GetExecutingAssembly());
 
         return services;
+    }
+}
+
+// ─── Audit Pipeline Behavior ─────────────────────────────────────────────────
+
+public class AuditBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
+    where TRequest : IRequest<TResponse>
+{
+    private readonly IAuditService _audit;
+    private readonly ICurrentUser _currentUser;
+
+    public AuditBehavior(IAuditService audit, ICurrentUser currentUser)
+    {
+        _audit = audit;
+        _currentUser = currentUser;
+    }
+
+    public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken ct)
+    {
+        var requestName = typeof(TRequest).Name;
+
+        TResponse response;
+        try
+        {
+            response = await next();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (_currentUser.IsAuthenticated)
+                FireAndForgetAudit(requestName, ":denied", ct);
+            throw;
+        }
+
+        // Skip read-only queries — only audit mutations
+        if (!_currentUser.IsAuthenticated || IsReadOnly(requestName))
+            return response;
+
+        var result = IsSuccess(response);
+        FireAndForgetAudit(requestName, result ? "" : ":failed", ct);
+
+        return response;
+    }
+
+    private void FireAndForgetAudit(string requestName, string suffix, CancellationToken _)
+    {
+        var (resourceType, verb) = ParseRequestName(requestName);
+        var resourceId = TryGetResourceId();
+        _ = _audit.LogAsync(
+            _currentUser.UserId, _currentUser.Name,
+            verb + suffix, resourceType, resourceId,
+            requestName, _currentUser.TenantId,
+            ct: CancellationToken.None);
+    }
+
+    private static (string resourceType, string verb) ParseRequestName(string name)
+    {
+        var verbs = new[] { "Create", "Update", "Delete", "Cancel", "Retry", "Trigger", "Enable", "Disable", "Invite", "Remove", "Get", "List" };
+        foreach (var v in verbs)
+        {
+            if (name.StartsWith(v, StringComparison.OrdinalIgnoreCase))
+            {
+                var resource = name[v.Length..].Replace("Command", "").Replace("Query", "");
+                return (resource, v.ToLowerInvariant());
+            }
+        }
+        return (name.Replace("Command", "").Replace("Query", ""), "execute");
+    }
+
+    private static bool IsReadOnly(string name) =>
+        name.EndsWith("Query", StringComparison.OrdinalIgnoreCase) ||
+        name.StartsWith("Get", StringComparison.OrdinalIgnoreCase) ||
+        name.StartsWith("List", StringComparison.OrdinalIgnoreCase);
+
+    private Guid TryGetResourceId()
+    {
+        // Not needed at behavior level — resource ID captured per-handler if needed
+        return Guid.Empty;
+    }
+
+    private static bool IsSuccess(TResponse response)
+    {
+        if (response is Result r) return r.IsSuccess;
+        var prop = response?.GetType().GetProperty("IsSuccess");
+        if (prop?.GetValue(response) is bool b) return b;
+        return true;
     }
 }
 

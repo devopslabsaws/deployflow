@@ -1,6 +1,8 @@
+using DeployFlow.API.Attributes;
 using DeployFlow.Application.DTOs;
 using DeployFlow.Application.Features.Deployments.Commands;
 using DeployFlow.Application.Features.Deployments.Queries;
+using DeployFlow.Domain.Entities;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -60,6 +62,7 @@ public class DeploymentsController : BaseController
 
     /// <summary>Cancel a running deployment.</summary>
     [HttpPost("{id:guid}/cancel")]
+    [RequireResourcePermission(PermissionResource.Deployment, ResourceAction.Deploy)]
     public async Task<IActionResult> Cancel(Guid id, CancellationToken ct)
     {
         var result = await Mediator.Send(new CancelDeploymentCommand(id), ct);
@@ -68,10 +71,25 @@ public class DeploymentsController : BaseController
 
     /// <summary>Roll back to a previous successful deployment.</summary>
     [HttpPost("{id:guid}/rollback")]
+    [RequireResourcePermission(PermissionResource.Deployment, ResourceAction.Deploy)]
     public async Task<IActionResult> Rollback(Guid id, CancellationToken ct)
     {
         var result = await Mediator.Send(new RollbackDeploymentCommand(id), ct);
         if (!result.IsSuccess) return ToResponse(result);
         return CreatedAtAction(nameof(GetById), new { id = result.Value!.Id }, result.Value);
     }
+
+    /// <summary>
+    /// Trigger a zero-downtime Blue/Green deployment for a project.
+    /// Deploys to the inactive slot, health-checks it, then switches traffic.
+    /// </summary>
+    [HttpPost("blue-green")]
+    public async Task<IActionResult> BlueGreen([FromBody] BlueGreenDeployRequest request, CancellationToken ct)
+    {
+        var result = await Mediator.Send(new BlueGreenDeployCommand(request.ProjectId), ct);
+        if (!result.IsSuccess) return ToResponse(result);
+        return CreatedAtAction(nameof(GetById), new { id = result.Value!.Id }, result.Value);
+    }
 }
+
+public record BlueGreenDeployRequest(Guid ProjectId);

@@ -3,7 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
-  ArrowLeft, Rocket, Clock, GitCommit, Terminal, RefreshCw,
+  ArrowLeft, Rocket, Clock, GitCommit, Terminal,
   CheckCircle2, XCircle, AlertTriangle, Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDeployment } from "@/hooks/use-api";
 import { formatRelativeTime, formatDuration, formatDate } from "@/lib/utils";
+import { DeploymentLiveLog } from "@/components/deployments/deployment-live-log";
 import Link from "next/link";
 
 const statusConfig: Record<string, { icon: React.ElementType; color: string; label: string }> = {
@@ -135,16 +136,12 @@ export default function DeploymentDetailPage() {
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Terminal className="h-4 w-4" /> Build Logs
                 </CardTitle>
-                <Button variant="ghost" size="sm" asChild>
-                  <Link href={`/logs?deploymentId=${id}`}>
-                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" />Live Logs
-                  </Link>
-                </Button>
               </CardHeader>
               <CardContent>
-                <div className="bg-black/50 rounded-lg p-4 font-mono text-xs text-green-400 min-h-[200px]">
-                  <p className="text-muted-foreground">Connect to a live API to stream deployment logs.</p>
-                </div>
+                <DeploymentLiveLog
+                  deploymentId={id}
+                  initialStatus={deployment?.status}
+                />
               </CardContent>
             </Card>
           </TabsContent>

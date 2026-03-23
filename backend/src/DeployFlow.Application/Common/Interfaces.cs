@@ -114,3 +114,44 @@ public record ContainerStats(
 public record SshCommandResult(int ExitCode, string StdOut, string StdErr, bool Success);
 
 public record GitCommitInfo(string Sha, string Message, string Author, string Email, DateTime Timestamp);
+
+/// <summary>
+/// Abstraction for broadcasting deployment log/status events over a real-time transport
+/// (implemented in the API layer using SignalR, keeping Infrastructure decoupled from SignalR).
+/// </summary>
+public interface IDeploymentLogBroadcaster
+{
+    Task BroadcastLogAsync(Guid deploymentId, string message, string? stream, CancellationToken ct = default);
+    Task BroadcastStatusAsync(Guid deploymentId, string status, CancellationToken ct = default);
+}
+
+/// <summary>
+/// Resource-level permission checks. Falls back to tenant-role if no explicit grant exists.
+/// </summary>
+public interface IPermissionService
+{
+    /// <summary>Returns true if the current user may perform <paramref name="action"/> on the resource.</summary>
+    Task<bool> HasPermissionAsync(
+        Guid userId,
+        string userRole,
+        DeployFlow.Domain.Entities.PermissionResource resourceType,
+        Guid resourceId,
+        DeployFlow.Domain.Entities.ResourceAction action,
+        CancellationToken ct = default);
+
+    /// <summary>Grants (or replaces) a permission on a specific resource for a user.</summary>
+    Task GrantAsync(
+        Guid tenantId,
+        Guid userId,
+        DeployFlow.Domain.Entities.PermissionResource resourceType,
+        Guid resourceId,
+        DeployFlow.Domain.Entities.ResourceAction actions,
+        CancellationToken ct = default);
+
+    /// <summary>Revokes all permissions a user has on a specific resource.</summary>
+    Task RevokeAsync(
+        Guid userId,
+        DeployFlow.Domain.Entities.PermissionResource resourceType,
+        Guid resourceId,
+        CancellationToken ct = default);
+}
