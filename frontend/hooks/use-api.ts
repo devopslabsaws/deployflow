@@ -11,15 +11,24 @@ import type {
   Database,
   Pipeline,
   Alert,
+  AlertRule,
+  AlertRuleTestResult,
   Domain,
+  DomainDnsCheckResult,
+  DomainSslActionResult,
   EnvVariable,
   AuditLog,
   ServerMetrics,
   MetricSeries,
   PaginatedResponse,
+  NotificationChannel,
   NotificationConfig,
   SshKey,
   TeamMember,
+  TeamInvitation,
+  InvitationPreview,
+  PermissionGrant,
+  PermissionPreview,
   CostRecord,
   S3Destination,
   BackupPolicy,
@@ -47,6 +56,7 @@ export interface Volume {
   name: string;
   status: string;
   driver: string;
+  dockerName?: string;
   mountPath?: string;
   sizeBytes: number;
   projectId?: string;
@@ -177,11 +187,13 @@ export const queryKeys = {
   alerts: {
     all: ["alerts"] as const,
     list: () => ["alerts", "list"] as const,
+    rules: () => ["alerts", "rules"] as const,
   },
   domains: {
     all: ["domains"] as const,
     list: () => ["domains", "list"] as const,
     detail: (id: string) => ["domains", "detail", id] as const,
+    dnsCheck: (id: string) => ["domains", "dns-check", id] as const,
   },
   envVars: (projectId: string) => ["envvars", projectId] as const,
   auditLogs: (params?: any) => ["audit-logs", params] as const,
@@ -654,13 +666,14 @@ export function useDeleteDatabase() {
 
 function normalizePipeline(dto: any): Pipeline {
   const triggerRaw = (dto.trigger ?? "manual") as string;
-  const triggerType = triggerRaw.toLowerCase() as Pipeline["trigger"]["type"];
+  const triggerType = triggerRaw.toLowerCase();
+  const normalizedTrigger = triggerType === "pullrequest" ? "pr" : triggerType;
 
   return {
     ...dto,
     status: dto.status?.toLowerCase() as Pipeline["status"],
     trigger: {
-      type: (triggerType === "pullrequest" ? "pr" : triggerType) as Pipeline["trigger"]["type"],
+      type: normalizedTrigger as Pipeline["trigger"]["type"],
       schedule: dto.cronExpression ?? undefined,
     },
     stages: (dto.stages ?? []).map((s: any) => ({
@@ -828,6 +841,51 @@ export function useCreateDomain() {
   });
 }
 
+export function useVerifyDomain() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.post<Domain>(`/domains/${id}/verify`, {}),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.domains.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.domains.detail(id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.domains.dnsCheck(id) });
+    },
+  });
+}
+
+export function useCheckDomainDns() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.get<DomainDnsCheckResult>(`/domains/${id}/dns-check`),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.domains.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.domains.dnsCheck(id) });
+    },
+  });
+}
+
+export function useProvisionDomainSsl() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.post<DomainSslActionResult>(`/domains/${id}/provision-ssl`, {}),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.domains.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.domains.detail(id) });
+    },
+  });
+}
+
+export function useRenewDomainSsl() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.post<DomainSslActionResult>(`/domains/${id}/renew-ssl`, {}),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.domains.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.domains.detail(id) });
+    },
+  });
+}
+
 // ─── Environment Variables ────────────────────────────────────────────────────
 
 export function useEnvVars(projectId: string) {
@@ -906,6 +964,99 @@ export function useInviteTeamMember() {
     mutationFn: (data: { email: string; role: string }) =>
       apiClient.post("/team/invite", data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.team() }),
+  });
+}
+
+export function useTeamInvitations() {
+  return useQuery({
+    queryKey: ["team", "invitations"],
+    queryFn: () => apiClient.get<TeamInvitation[]>("/team/invitations"),
+    staleTime: 60_000,
+  });
+}
+
+export function useResendTeamInvitation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (invitationId: string) => apiClient.post(`/team/invitations/${invitationId}/resend`, {}),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["team", "invitations"] }),
+  });
+}
+
+export function useRevokeTeamInvitation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (invitationId: string) => apiClient.delete(`/team/invitations/${invitationId}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["team", "invitations"] }),
+  });
+}
+
+export function useInvitationPreview(token?: string) {
+  return useQuery({
+    queryKey: ["auth", "invitation", token],
+    queryFn: () => apiClient.get<InvitationPreview>(`/auth/invitations/${encodeURIComponent(token!)}`),
+    enabled: !!token,
+    staleTime: 30_000,
+  });
+}
+
+export function useAcceptInvitation() {
+  return useMutation({
+    mutationFn: (data: { token: string; name: string; password: string }) =>
+      apiClient.post<{ accessToken: string; refreshToken: string; user: any }>("/auth/accept-invitation", data),
+  });
+}
+
+export function usePermissionGrants(userId?: string) {
+  return useQuery({
+    queryKey: ["permissions", "grants", userId],
+    queryFn: () => apiClient.get<PermissionGrant[]>(`/permissions/users/${userId}/grants`),
+    enabled: !!userId,
+    staleTime: 30_000,
+  });
+}
+
+export function usePermissionPreview(userId?: string, resourceType?: string, resourceId?: string) {
+  return useQuery({
+    queryKey: ["permissions", "preview", userId, resourceType, resourceId],
+    queryFn: () =>
+      apiClient.get<PermissionPreview>(`/permissions/users/${userId}/preview`, {
+        params: { resourceType, resourceId },
+      }),
+    enabled: !!userId && !!resourceType && !!resourceId,
+    staleTime: 5_000,
+  });
+}
+
+export function useBulkGrantPermissions() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      userId: string;
+      grants: Array<{ resourceType: string; resourceId: string; actions: string[] }>;
+    }) => apiClient.post("/permissions/grants/bulk", data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["permissions", "grants", variables.userId] });
+      queryClient.invalidateQueries({ queryKey: ["permissions", "preview", variables.userId] });
+    },
+  });
+}
+
+export function useRevokePermission() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { userId: string; resourceType: string; resourceId: string }) =>
+      apiClient.delete("/permissions/revoke", {
+        data: {
+          userId: data.userId,
+          resourceType: data.resourceType,
+          resourceId: data.resourceId,
+        },
+      }),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["permissions", "grants", variables.userId] });
+      queryClient.invalidateQueries({ queryKey: ["permissions", "preview", variables.userId] });
+    },
   });
 }
 
@@ -1044,6 +1195,58 @@ export function useResolveAlert() {
   return useMutation({
     mutationFn: (id: string) => apiClient.post(`/alerts/${id}/resolve`, {}),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.alerts.all }),
+  });
+}
+
+export function useAlertRules() {
+  return useQuery({
+    queryKey: queryKeys.alerts.rules(),
+    queryFn: () => apiClient.get<AlertRule[]>("/alert-rules"),
+    staleTime: 30_000,
+  });
+}
+
+type UpsertAlertRulePayload = Omit<AlertRule, "id" | "createdAt" | "updatedAt" | "lastTriggeredAt">;
+
+export function useCreateAlertRule() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: UpsertAlertRulePayload) => apiClient.post<AlertRule>("/alert-rules", data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.alerts.rules() }),
+  });
+}
+
+export function useUpdateAlertRule() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string } & UpsertAlertRulePayload) =>
+      apiClient.put<AlertRule>(`/alert-rules/${id}`, data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.alerts.rules() }),
+  });
+}
+
+export function useDeleteAlertRule() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/alert-rules/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.alerts.rules() }),
+  });
+}
+
+export function useTestAlertRule() {
+  return useMutation({
+    mutationFn: ({ id, sampleValue }: { id: string; sampleValue?: number }) =>
+      apiClient.post<AlertRuleTestResult>(`/alert-rules/${id}/test`, sampleValue === undefined ? {} : { sampleValue }),
+  });
+}
+
+export function useTestNotificationChannel() {
+  return useMutation({
+    mutationFn: (channel: NotificationChannel) =>
+      apiClient.post<{ channel: string; success: boolean; message: string; testedAt: string }>(
+        `/notifications/channels/${channel}/test`,
+        {}
+      ),
   });
 }
 

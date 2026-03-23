@@ -12,23 +12,37 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const authPersist = (useAuthStore as any).persist;
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
+  const [authHydrated, setAuthHydrated] = useState(() => authPersist?.hasHydrated?.() ?? true);
   const { isAuthenticated } = useAuthStore();
   const router = useRouter();
 
-  // Wait for Zustand persist to rehydrate from localStorage
   useEffect(() => {
-    setHydrated(true);
+    if (!authPersist) {
+      setAuthHydrated(true);
+      return;
+    }
+
+    if (authPersist.hasHydrated()) {
+      setAuthHydrated(true);
+      return;
+    }
+
+    const unsubscribe = authPersist.onFinishHydration(() => {
+      setAuthHydrated(true);
+    });
+
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
-    if (hydrated && !isAuthenticated) {
+    if (authHydrated && !isAuthenticated) {
       router.replace("/login");
     }
-  }, [hydrated, isAuthenticated, router]);
+  }, [authHydrated, isAuthenticated, router]);
 
-  if (!hydrated || !isAuthenticated) {
+  if (!authHydrated || !isAuthenticated) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />

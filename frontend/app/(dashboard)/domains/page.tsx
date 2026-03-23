@@ -18,7 +18,15 @@ import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useDomains, useAddDomain, useDeleteDomain } from "@/hooks/use-api";
+import {
+  useDomains,
+  useAddDomain,
+  useDeleteDomain,
+  useCheckDomainDns,
+  useVerifyDomain,
+  useProvisionDomainSsl,
+  useRenewDomainSsl,
+} from "@/hooks/use-api";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
@@ -33,10 +41,56 @@ const statusConfig = {
 export default function DomainsPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [dnsMessages, setDnsMessages] = useState<Record<string, string>>({});
   const [form, setForm] = useState({ domainName: "", sslEnabled: true });
   const { data: domains, isLoading } = useDomains();
   const addDomain = useAddDomain();
   const deleteDomain = useDeleteDomain();
+  const checkDns = useCheckDomainDns();
+  const verifyDomain = useVerifyDomain();
+  const provisionSsl = useProvisionDomainSsl();
+  const renewSsl = useRenewDomainSsl();
+
+  const handleDnsCheck = async (id: string, name: string) => {
+    try {
+      const result = await checkDns.mutateAsync(id);
+      setDnsMessages((prev) => ({ ...prev, [id]: result.message }));
+      if (result.isValid) {
+        toast.success(`DNS verified for ${name}.`);
+      } else {
+        toast.warning(`DNS not ready for ${name}.`, { description: result.message });
+      }
+    } catch (e: any) {
+      toast.error("DNS check failed", { description: e.message });
+    }
+  };
+
+  const handleVerify = async (id: string, name: string) => {
+    try {
+      await verifyDomain.mutateAsync(id);
+      toast.success(`Domain verification requested for ${name}.`);
+    } catch (e: any) {
+      toast.error("Domain verification failed", { description: e.message });
+    }
+  };
+
+  const handleProvisionSsl = async (id: string, name: string) => {
+    try {
+      const result = await provisionSsl.mutateAsync(id);
+      toast.success(`SSL provisioned for ${name}.`, { description: result.message });
+    } catch (e: any) {
+      toast.error("SSL provisioning failed", { description: e.message });
+    }
+  };
+
+  const handleRenewSsl = async (id: string, name: string) => {
+    try {
+      const result = await renewSsl.mutateAsync(id);
+      toast.success(`SSL renewal requested for ${name}.`, { description: result.message });
+    } catch (e: any) {
+      toast.error("SSL renewal failed", { description: e.message });
+    }
+  };
 
   const handleAdd = async () => {
     if (!form.domainName) { toast.error("Domain name is required."); return; }
@@ -113,10 +167,14 @@ export default function DomainsPage() {
                           </Badge>
                         )}
                       </div>
-                      {domain.sslExpiresAt && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          SSL expires {formatDistanceToNow(new Date(domain.sslExpiresAt), { addSuffix: true })}
-                        </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {domain.dnsVerified ? "DNS verified" : "DNS pending"}
+                        {domain.sslExpiresAt
+                          ? ` · SSL expires ${formatDistanceToNow(new Date(domain.sslExpiresAt), { addSuffix: true })}`
+                          : " · SSL not provisioned"}
+                      </p>
+                      {dnsMessages[domain.id] && (
+                        <p className="text-xs text-muted-foreground mt-1">{dnsMessages[domain.id]}</p>
                       )}
                     </div>
                     <DropdownMenu>
@@ -126,8 +184,17 @@ export default function DomainsPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem>
-                          <RefreshCw className="h-4 w-4 mr-2" />Re-verify DNS
+                        <DropdownMenuItem onClick={() => handleDnsCheck(domain.id, domain.name)}>
+                          <RefreshCw className="h-4 w-4 mr-2" />Check DNS
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleVerify(domain.id, domain.name)}>
+                          <CheckCircle className="h-4 w-4 mr-2" />Verify Domain
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleProvisionSsl(domain.id, domain.name)}>
+                          <Lock className="h-4 w-4 mr-2" />Provision SSL
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleRenewSsl(domain.id, domain.name)}>
+                          <RefreshCw className="h-4 w-4 mr-2" />Renew SSL
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-destructive"

@@ -110,6 +110,79 @@ namespace DeployFlow.Infrastructure.Migrations
                     b.ToTable("alerts", (string)null);
                 });
 
+            modelBuilder.Entity("DeployFlow.Domain.Entities.AlertRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<int>("CooldownMinutes")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("NVARCHAR2(1000)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<DateTime?>("LastTriggeredAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<string>("Metric")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("NVARCHAR2(100)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("NVARCHAR2(200)");
+
+                    b.Property<string>("Operator")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("NVARCHAR2(8)");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<decimal>("Threshold")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("DECIMAL(18,4)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<int>("WindowMinutes")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "IsEnabled");
+
+                    b.ToTable("alert_rules", (string)null);
+                });
+
             modelBuilder.Entity("DeployFlow.Domain.Entities.ApplicationRole", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2165,6 +2238,79 @@ namespace DeployFlow.Infrastructure.Migrations
                     b.HasIndex("TenantId");
 
                     b.ToTable("ssh_keys", (string)null);
+                });
+
+            modelBuilder.Entity("DeployFlow.Domain.Entities.TeamInvitation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("NVARCHAR2(320)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<string>("InvitedByName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("NVARCHAR2(200)");
+
+                    b.Property<Guid>("InvitedByUserId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<DateTime>("LastSentAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("NVARCHAR2(200)");
+
+                    b.Property<int>("ResendCount")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("NVARCHAR2(100)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("Token")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "Email");
+
+                    b.ToTable("team_invitations", (string)null);
                 });
 
             modelBuilder.Entity("DeployFlow.Domain.Entities.Tenant", b =>

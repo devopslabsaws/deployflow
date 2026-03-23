@@ -5,7 +5,7 @@ namespace DeployFlow.Domain.Entities;
 /// <summary>
 /// Resource types that can have permissions assigned.
 /// </summary>
-public enum PermissionResource { Project, Server, Pipeline, Database, Deployment }
+public enum PermissionResource { Project, Service, Database, Domain, Volume, Server, Pipeline, Deployment }
 
 /// <summary>
 /// Actions that can be permitted or denied on a resource.

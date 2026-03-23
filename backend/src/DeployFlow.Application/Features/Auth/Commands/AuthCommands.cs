@@ -511,3 +511,106 @@ public class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordCommand,
         return Result.Success();
     }
 }
+
+// ─── Team Invitation Redemption ──────────────────────────────────────────────
+
+public record GetInvitationByTokenQuery(string Token) : IRequest<Result<InvitationPreviewDto>>;
+
+public class GetInvitationByTokenQueryHandler : IRequestHandler<GetInvitationByTokenQuery, Result<InvitationPreviewDto>>
+{
+    private readonly IUnitOfWork _uow;
+
+    public GetInvitationByTokenQueryHandler(IUnitOfWork uow)
+    {
+        _uow = uow;
+    }
+
+    public async Task<Result<InvitationPreviewDto>> Handle(GetInvitationByTokenQuery request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Token))
+            return Result<InvitationPreviewDto>.Failure("Invitation token is required.", 400);
+
+        var invitation = (await _uow.TeamInvitations.FindAsync(i => i.Token == request.Token, ct)).FirstOrDefault();
+        if (invitation is null)
+            return Result<InvitationPreviewDto>.Failure("Invitation not found.", 404);
+
+        if (invitation.IsExpired)
+            return Result<InvitationPreviewDto>.Failure("Invitation has expired.", 400);
+
+        return Result<InvitationPreviewDto>.Success(new InvitationPreviewDto(
+            invitation.Email,
+            invitation.Name,
+            invitation.Role,
+            invitation.ExpiresAt));
+    }
+}
+
+public record AcceptInvitationCommand(string Token, string Name, string Password) : IRequest<Result<AuthTokensDto>>;
+
+public class AcceptInvitationCommandValidator : AbstractValidator<AcceptInvitationCommand>
+{
+    public AcceptInvitationCommandValidator()
+    {
+        RuleFor(x => x.Token).NotEmpty();
+        RuleFor(x => x.Name).NotEmpty().MinimumLength(2).MaximumLength(100);
+        RuleFor(x => x.Password).NotEmpty().MinimumLength(8)
+            .Matches("[A-Z]").WithMessage("Password must contain at least one uppercase letter.")
+            .Matches("[0-9]").WithMessage("Password must contain at least one number.");
+    }
+}
+
+public class AcceptInvitationCommandHandler : IRequestHandler<AcceptInvitationCommand, Result<AuthTokensDto>>
+{
+    private readonly UserManager<ApplicationUser> _userManager;
+    private readonly IUnitOfWork _uow;
+    private readonly IJwtService _jwt;
+
+    public AcceptInvitationCommandHandler(UserManager<ApplicationUser> userManager, IUnitOfWork uow, IJwtService jwt)
+    {
+        _userManager = userManager;
+        _uow = uow;
+        _jwt = jwt;
+    }
+
+    public async Task<Result<AuthTokensDto>> Handle(AcceptInvitationCommand request, CancellationToken ct)
+    {
+        var invitation = (await _uow.TeamInvitations.FindAsync(i => i.Token == request.Token, ct)).FirstOrDefault();
+        if (invitation is null)
+            return Result<AuthTokensDto>.Failure("Invitation not found.", 404);
+
+        if (invitation.IsExpired)
+            return Result<AuthTokensDto>.Failure("Invitation has expired.", 400);
+
+        var existing = await _userManager.FindByEmailAsync(invitation.Email);
+        if (existing is not null)
+            return Result<AuthTokensDto>.Failure("An account with this email already exists.", 400);
+
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            UserName = invitation.Email,
+            NormalizedUserName = invitation.Email.ToUpperInvariant(),
+            Email = invitation.Email,
+            NormalizedEmail = invitation.Email.ToUpperInvariant(),
+            FullName = request.Name.Trim(),
+            TenantId = invitation.TenantId,
+            Role = invitation.Role,
+            SecurityStamp = Guid.NewGuid().ToString(),
+            IsActive = true,
+        };
+
+        var create = await _userManager.CreateAsync(user, request.Password);
+        if (!create.Succeeded)
+            return Result<AuthTokensDto>.Failure(string.Join("; ", create.Errors.Select(e => e.Description)));
+
+        await _uow.TeamInvitations.DeleteAsync(invitation, ct);
+
+        var tenant = await _uow.Tenants.GetByIdAsync(invitation.TenantId, ct);
+        var tokens = _jwt.GenerateTokens(user, tenant ?? new Tenant());
+        user.SetRefreshToken(tokens.RefreshToken, DateTime.UtcNow.AddDays(30));
+        await _userManager.UpdateAsync(user);
+
+        await _uow.SaveChangesAsync(ct);
+        return Result<AuthTokensDto>.Success(tokens);
+    }
+}

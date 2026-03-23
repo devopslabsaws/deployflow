@@ -29,6 +29,13 @@ public class NotificationsController : BaseController
                 request.EmailEnabled, request.DeploymentSuccess, request.DeploymentFailure), ct);
         return ToResponse(result);
     }
+
+    [HttpPost("channels/{channel}/test")]
+    public async Task<IActionResult> TestChannel(string channel, CancellationToken ct)
+    {
+        var result = await Mediator.Send(new TestNotificationChannelCommand(channel), ct);
+        return ToResponse(result);
+    }
 }
 
 public record SaveEmailNotificationRequest(bool EmailEnabled, bool DeploymentSuccess, bool DeploymentFailure);

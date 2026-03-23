@@ -192,6 +192,23 @@ public class ApplicationUserConfiguration : IEntityTypeConfiguration<Application
     }
 }
 
+public class TeamInvitationConfiguration : IEntityTypeConfiguration<TeamInvitation>
+{
+    public void Configure(EntityTypeBuilder<TeamInvitation> b)
+    {
+        b.ToTable("team_invitations");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Email).HasMaxLength(320).IsRequired();
+        b.Property(x => x.Name).HasMaxLength(200).IsRequired();
+        b.Property(x => x.Role).HasMaxLength(50).IsRequired();
+        b.Property(x => x.Token).HasMaxLength(100).IsRequired();
+        b.Property(x => x.InvitedByName).HasMaxLength(200).IsRequired();
+        b.HasIndex(x => x.TenantId);
+        b.HasIndex(x => new { x.TenantId, x.Email });
+        b.HasIndex(x => x.Token).IsUnique();
+    }
+}
+
 public class SshKeyConfiguration : IEntityTypeConfiguration<SshKey>
 {
     public void Configure(EntityTypeBuilder<SshKey> b)
@@ -219,6 +236,23 @@ public class AlertConfiguration : IEntityTypeConfiguration<Alert>
         b.HasIndex(x => x.TenantId);
         // Composite for alert dedup query in AlertEvaluatorService: (TenantId, Source, ResourceId, Status)
         b.HasIndex(x => new { x.TenantId, x.Source, x.ResourceId, x.Status });
+    }
+}
+
+public class AlertRuleConfiguration : IEntityTypeConfiguration<AlertRule>
+{
+    public void Configure(EntityTypeBuilder<AlertRule> b)
+    {
+        b.ToTable("alert_rules");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Name).HasMaxLength(200).IsRequired();
+        b.Property(x => x.Metric).HasMaxLength(100).IsRequired();
+        b.Property(x => x.Operator).HasMaxLength(8).IsRequired();
+        b.Property(x => x.Threshold).HasPrecision(18, 4);
+        b.Property(x => x.Severity).HasConversion<string>().HasMaxLength(50);
+        b.Property(x => x.Description).HasMaxLength(1000);
+        b.HasIndex(x => x.TenantId);
+        b.HasIndex(x => new { x.TenantId, x.IsEnabled });
     }
 }
 

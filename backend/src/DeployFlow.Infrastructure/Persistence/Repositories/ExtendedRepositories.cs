@@ -71,3 +71,11 @@ public class NotificationConfigRepository : TenantRepository<NotificationConfig>
         => await _set.Where(n => n.TenantId == tenantId && n.IsEnabled).ToListAsync(ct);
 }
 
+public class AlertRuleRepository : TenantRepository<AlertRule>, IAlertRuleRepository
+{
+    public AlertRuleRepository(ApplicationDbContext db) : base(db) { }
+
+    public async Task<IReadOnlyList<AlertRule>> GetEnabledByTenantAsync(Guid tenantId, CancellationToken ct)
+        => await _set.Where(r => r.TenantId == tenantId && r.IsEnabled).ToListAsync(ct);
+}
+

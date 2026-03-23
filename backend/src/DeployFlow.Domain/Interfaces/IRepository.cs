@@ -27,6 +27,7 @@ public interface IUnitOfWork : IDisposable
     ITenantRepository<S3Destination> S3Destinations { get; }
     ITenantRepository<BackupPolicy> BackupPolicies { get; }
     ITenantRepository<RestoreJob> RestoreJobs { get; }
+    ITenantRepository<TeamInvitation> TeamInvitations { get; }
     IPipelineRepository Pipelines { get; }
     IAuditLogRepository AuditLogs { get; }
     IAlertRepository Alerts { get; }
@@ -37,6 +38,7 @@ public interface IUnitOfWork : IDisposable
     IDomainRepository Domains { get; }
     IEnvVariableRepository EnvVariables { get; }
     INotificationConfigRepository NotificationConfigs { get; }
+    IAlertRuleRepository AlertRules { get; }
 
     Task<int> SaveChangesAsync(CancellationToken ct = default);
     Task BeginTransactionAsync(CancellationToken ct = default);

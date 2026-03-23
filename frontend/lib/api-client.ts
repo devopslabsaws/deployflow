@@ -1,7 +1,8 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosError } from "axios";
 import { getMockResponse } from "./mock-data";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+// Prefer explicit API URL, but default to Next.js same-origin proxy to avoid local port drift.
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/proxy";
 
 // Module-level token cache — avoids repeated JSON.parse on every HTTP request
 let _cachedAccessToken: string | null = null;

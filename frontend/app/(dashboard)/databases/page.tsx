@@ -132,6 +132,7 @@ export default function DatabasesPage() {
     try {
       await deleteDatabase.mutateAsync(deleteTarget.id);
       toast.success(`Database "${deleteTarget.name}" deleted.`);
+      setDeleteTarget(null);
     } catch (e: any) {
       toast.error("Failed to delete database", { description: e.message });
     }
@@ -314,94 +315,38 @@ export default function DatabasesPage() {
           }
         }}
       >
-        <DialogContent>
+        <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle>Restore Database</DialogTitle>
             <DialogDescription>
               Start a restore job from a completed backup and monitor progress in real time.
             </DialogDescription>
-          </DialogContent>
-        </Dialog>
-
-        {/* Restore History Dialog */}
-        <RestoreHistoryDialog
-          databaseId={restoreHistoryDbId}
-          onClose={() => setRestoreHistoryDbId(null)}
-        />
-      </div>
-    );
-  }
-
-  function RestoreHistoryDialog({ databaseId, onClose }: { databaseId: string | null; onClose: () => void }) {
-    const { data: jobs, isLoading } = useRestoreJobs(databaseId ?? "");
-
-    const statusColor = (s: string) => {
-      if (s === "completed") return "text-success";
-      if (s === "failed") return "text-destructive";
-      if (s === "running") return "text-blue-500";
-      return "text-muted-foreground";
-    };
-
-    return (
-      <Dialog open={!!databaseId} onOpenChange={(open) => { if (!open) onClose(); }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <History className="h-4 w-4" />Restore History
-            </DialogTitle>
-            <DialogDescription>Past and in-progress database restore jobs.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 max-h-80 overflow-y-auto py-1">
-            {isLoading && (
-              <p className="text-sm text-muted-foreground text-center py-4">Loading...</p>
-            )}
-            {!isLoading && (!jobs || jobs.length === 0) && (
-              <p className="text-sm text-muted-foreground text-center py-4">No restore jobs found.</p>
-            )}
-            {jobs?.map((job: any) => (
-              <div key={job.jobId ?? job.id} className="rounded-md border border-border/60 p-3 space-y-1.5">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-mono font-medium truncate">{job.targetDatabaseName}</span>
-                  <Badge variant="outline" className={`text-[10px] ${statusColor(job.status)}`}>
-                    {job.status}
-                  </Badge>
-                </div>
-                {job.progressPercent != null && (
-                  <Progress value={job.progressPercent} className="h-1.5" />
-                )}
-                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                  {job.startedAt && <span>Started {new Date(job.startedAt).toLocaleString()}</span>}
-                  {job.completedAt && <span>Completed {new Date(job.completedAt).toLocaleString()}</span>}
-                </div>
-                {job.errorMessage && (
-                  <p className="text-[10px] text-destructive">{job.errorMessage}</p>
-                )}
-              </div>
-            ))}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={onClose}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    );
-  }
 
-  function DatabaseCard({
-    database: db,
-    onBackup,
-    onBackupPolicy,
-    onRestore,
-    onRestoreHistory,
-    onDelete,
-  }: {
-    database: Database;
-    onBackup: () => void;
-    onBackupPolicy: () => void;
-    onRestore: () => void;
-    onRestoreHistory: () => void;
-    onDelete: () => void;
-  })
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Backup</Label>
+              {loadingBackups ? (
+                <Skeleton className="h-10 w-full" />
+              ) : (
+                <Select value={selectedBackupId} onValueChange={setSelectedBackupId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select completed backup" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {backups.map((backup) => (
+                      <SelectItem key={backup.id} value={backup.id}>
+                        {backup.fileName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {!loadingBackups && backups.length === 0 && (
+                <p className="text-xs text-muted-foreground">No completed backups found for this database.</p>
+              )}
+            </div>
+
             <div className="space-y-1.5">
               <Label htmlFor="restore-target-name">Restore Target Database Name</Label>
               <Input
@@ -447,7 +392,64 @@ export default function DatabasesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <RestoreHistoryDialog databaseId={restoreHistoryDbId} onClose={() => setRestoreHistoryDbId(null)} />
     </div>
+  );
+}
+
+function RestoreHistoryDialog({ databaseId, onClose }: { databaseId: string | null; onClose: () => void }) {
+  const { data: jobs, isLoading } = useRestoreJobs(databaseId ?? "");
+
+  const statusColor = (s: string) => {
+    if (s === "completed") return "text-success";
+    if (s === "failed") return "text-destructive";
+    if (s === "running") return "text-blue-500";
+    return "text-muted-foreground";
+  };
+
+  return (
+    <Dialog open={!!databaseId} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <History className="h-4 w-4" />Restore History
+          </DialogTitle>
+          <DialogDescription>Past and in-progress database restore jobs.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 max-h-80 overflow-y-auto py-1">
+          {isLoading && (
+            <p className="text-sm text-muted-foreground text-center py-4">Loading...</p>
+          )}
+          {!isLoading && (!jobs || jobs.length === 0) && (
+            <p className="text-sm text-muted-foreground text-center py-4">No restore jobs found.</p>
+          )}
+          {jobs?.map((job: any) => (
+            <div key={job.jobId ?? job.id} className="rounded-md border border-border/60 p-3 space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-mono font-medium truncate">{job.targetDatabaseName}</span>
+                <Badge variant="outline" className={`text-[10px] ${statusColor(job.status)}`}>
+                  {job.status}
+                </Badge>
+              </div>
+              {job.progressPercent != null && (
+                <Progress value={job.progressPercent} className="h-1.5" />
+              )}
+              <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                {job.startedAt && <span>Started {new Date(job.startedAt).toLocaleString()}</span>}
+                {job.completedAt && <span>Completed {new Date(job.completedAt).toLocaleString()}</span>}
+              </div>
+              {job.errorMessage && (
+                <p className="text-[10px] text-destructive">{job.errorMessage}</p>
+              )}
+            </div>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -456,12 +458,14 @@ function DatabaseCard({
   onBackup,
   onBackupPolicy,
   onRestore,
+  onRestoreHistory,
   onDelete,
 }: {
   database: Database;
   onBackup: () => void;
   onBackupPolicy: () => void;
   onRestore: () => void;
+  onRestoreHistory: () => void;
   onDelete: () => void;
 }) {
   const [showConnectionString, setShowConnectionString] = useState(false);
@@ -511,9 +515,9 @@ function DatabaseCard({
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={onRestore}>
                   <RotateCcw className="mr-2 w-4 h-4" />Restore
-                                <DropdownMenuItem onClick={onRestoreHistory}>
-                                  <History className="mr-2 w-4 h-4" />Restore History
-                                </DropdownMenuItem>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onRestoreHistory}>
+                  <History className="mr-2 w-4 h-4" />Restore History
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem className="text-destructive" onClick={onDelete}>
@@ -525,7 +529,6 @@ function DatabaseCard({
         </CardHeader>
 
         <CardContent className="space-y-4">
-          {/* Status */}
           <div className="flex items-center justify-between">
             <div className={cn("flex items-center gap-1.5 text-xs", statusCfg.color)}>
               <StatusIcon className={cn("w-3.5 h-3.5", db.status === "creating" || db.status === "restoring" ? "animate-spin" : "")} />
@@ -537,7 +540,6 @@ function DatabaseCard({
             </div>
           </div>
 
-          {/* Connection String */}
           {db.connectionString && (
             <div className="rounded-md bg-muted/50 border border-border/50 p-2">
               <div className="flex items-center justify-between mb-1">
@@ -559,7 +561,6 @@ function DatabaseCard({
             </div>
           )}
 
-          {/* Backup Info */}
           <div className="flex items-center justify-between text-xs border-t border-border/50 pt-3">
             <div className="flex items-center gap-1.5 text-muted-foreground">
               <Clock className="w-3 h-3" />

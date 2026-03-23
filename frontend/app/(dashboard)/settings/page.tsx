@@ -42,8 +42,10 @@ import {
   useApiKeys, useCreateApiKey, useDeleteApiKey,
   useEmailNotificationConfig, useSaveEmailNotificationConfig,
   useVerifyDockerHub, useConnectSlack, useConnectAws, useConnectGrafana,
+  useTestNotificationChannel,
   useSshKeys, useCreateSshKey, useDeleteSshKey,
 } from "@/hooks/use-api";
+import type { NotificationChannel } from "@/types";
 import { DockerHubConnectDialog } from "@/components/settings/docker-hub-dialog";
 import { TwoFaDialog } from "@/components/settings/two-fa-dialog";
 import { formatRelativeTime } from "@/lib/utils";
@@ -105,8 +107,18 @@ export default function SettingsPage() {
   const connectSlack = useConnectSlack();
   const connectAws = useConnectAws();
   const connectGrafana = useConnectGrafana();
+  const testNotificationChannel = useTestNotificationChannel();
   const { data: dockerHubStatus, isLoading: dockerHubLoading } = useDockerHubStatus();
   const disconnectDockerHub = useDisconnectDockerHub();
+
+  const handleTestChannel = async (channel: NotificationChannel, label: string) => {
+    try {
+      const result = await testNotificationChannel.mutateAsync(channel);
+      toast.success(`${label} test sent.`, { description: result.message });
+    } catch (e: any) {
+      toast.error(`${label} test failed`, { description: e.message });
+    }
+  };
 
   // SSH Keys
   const { data: sshKeys, isLoading: sshKeysLoading } = useSshKeys();
@@ -435,25 +447,34 @@ export default function SettingsPage() {
                       <p className="text-sm font-medium">Slack</p>
                       <p className="text-xs text-muted-foreground">Connect your Slack workspace</p>
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => setSlackWebhookOpen(true)}>
-                      Configure
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setSlackWebhookOpen(true)}>
+                        Configure
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleTestChannel("slack", "Slack")}>Test</Button>
+                    </div>
                   </div>
                   <div className="flex items-center justify-between rounded-lg border p-3">
                     <div>
                       <p className="text-sm font-medium">Microsoft Teams</p>
                       <p className="text-xs text-muted-foreground">Send notifications to a Teams channel</p>
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => setTeamsWebhookOpen(true)}>
-                      Configure
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setTeamsWebhookOpen(true)}>
+                        Configure
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleTestChannel("msteams", "Microsoft Teams")}>Test</Button>
+                    </div>
                   </div>
                   <div className="flex items-center justify-between rounded-lg border p-3">
                     <div>
                       <p className="text-sm font-medium">Email</p>
                       <p className="text-xs text-muted-foreground">{user?.email}</p>
                     </div>
-                    <Switch checked={notificationsEnabled} onCheckedChange={setNotificationsEnabled} />
+                    <div className="flex items-center gap-2">
+                      <Switch checked={notificationsEnabled} onCheckedChange={setNotificationsEnabled} />
+                      <Button variant="ghost" size="sm" onClick={() => handleTestChannel("email", "Email")}>Test</Button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -827,13 +848,13 @@ export default function SettingsPage() {
 
               {/* Other integrations */}
               {[
-                { name: "GitHub",          desc: "Connect repositories and trigger deployments on push", connected: true,  action: () => setGithubOpen(true) },
-                { name: "GitLab",          desc: "Connect GitLab repositories",                          connected: false, action: () => setGitlabOpen(true) },
+                { name: "GitHub",          desc: "Connect repositories and trigger deployments on push", connected: true,  action: () => setGithubOpen(true), testChannel: "github" as NotificationChannel },
+                { name: "GitLab",          desc: "Connect GitLab repositories",                          connected: false, action: () => setGitlabOpen(true), testChannel: "gitlab" as NotificationChannel },
                 { name: "AWS",             desc: "Deploy to EC2, ECS, Lambda and manage S3 backups",     connected: false, action: () => setAwsOpen(true) },
-                { name: "Slack",           desc: "Receive deployment notifications in Slack",             connected: false, action: () => setSlackWebhookOpen(true) },
-                { name: "Microsoft Teams", desc: "Receive deployment notifications in Teams",             connected: false, action: () => setTeamsWebhookOpen(true) },
+                { name: "Slack",           desc: "Receive deployment notifications in Slack",             connected: false, action: () => setSlackWebhookOpen(true), testChannel: "slack" as NotificationChannel },
+                { name: "Microsoft Teams", desc: "Receive deployment notifications in Teams",             connected: false, action: () => setTeamsWebhookOpen(true), testChannel: "msteams" as NotificationChannel },
                 { name: "Grafana",         desc: "Export metrics to Grafana dashboards",                  connected: false, action: () => setGrafanaOpen(true) },
-                { name: "Cloudflare",      desc: "Manage DNS and CDN through Cloudflare",               connected: false, action: () => setCloudflareOpen(true) },
+                { name: "Cloudflare",      desc: "Manage DNS and CDN through Cloudflare",                connected: false, action: () => setCloudflareOpen(true), testChannel: "cloudflare" as NotificationChannel },
               ].map((integration) => (
                 <div
                   key={integration.name}
@@ -843,13 +864,24 @@ export default function SettingsPage() {
                     <p className="text-sm font-semibold">{integration.name}</p>
                     <p className="text-xs text-muted-foreground mt-0.5">{integration.desc}</p>
                   </div>
-                  <Button
-                    variant={integration.connected ? "outline" : "default"}
-                    size="sm"
-                    onClick={integration.action}
-                  >
-                    {integration.connected ? "Connected ✓" : "Connect"}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant={integration.connected ? "outline" : "default"}
+                      size="sm"
+                      onClick={integration.action}
+                    >
+                      {integration.connected ? "Connected ✓" : "Connect"}
+                    </Button>
+                    {integration.testChannel && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleTestChannel(integration.testChannel!, integration.name)}
+                      >
+                        Test
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ))}
             </CardContent>

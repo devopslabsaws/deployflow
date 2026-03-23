@@ -432,6 +432,50 @@ export interface Domain {
   createdAt: string;
 }
 
+export interface DomainDnsCheckResult {
+  domainId: ID;
+  domainName: string;
+  isValid: boolean;
+  status: "verified" | "pending";
+  message: string;
+  expectedTarget: string;
+  resolvedAddresses: string[];
+  checkedAt: string;
+}
+
+export interface DomainSslActionResult {
+  domainId: ID;
+  domainName: string;
+  sslEnabled: boolean;
+  sslExpiresAt?: string;
+  status: DomainStatus | string;
+  message: string;
+}
+
+export interface AlertRule {
+  id: ID;
+  name: string;
+  metric: string;
+  operator: ">" | ">=" | "<" | "<=" | "=" | "!=";
+  threshold: number;
+  windowMinutes: number;
+  severity: "critical" | "warning" | "info";
+  isEnabled: boolean;
+  cooldownMinutes: number;
+  lastTriggeredAt?: string;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AlertRuleTestResult {
+  ruleId: ID;
+  triggered: boolean;
+  sampleValue: number;
+  message: string;
+  alertId?: ID;
+}
+
 // ============================================================
 // Team & RBAC
 // ============================================================
@@ -445,16 +489,60 @@ export interface TeamMember {
   permissions: Permission[];
 }
 
+export interface TeamInvitation {
+  id: ID;
+  email: string;
+  name: string;
+  role: UserRole | string;
+  status: "pending" | "expired";
+  expiresAt: string;
+  lastSentAt: string;
+  resendCount: number;
+  invitedByName: string;
+  createdAt: string;
+}
+
+export interface InvitationPreview {
+  email: string;
+  name: string;
+  role: UserRole | string;
+  expiresAt: string;
+}
+
 export interface Permission {
   resource: string;
   actions: string[];
+}
+
+export interface PermissionGrant {
+  id: ID;
+  userId: ID;
+  resourceType: string;
+  resourceId: ID;
+  actions: string[];
+}
+
+export interface PermissionPreview {
+  userId: ID;
+  resourceType: string;
+  resourceId: ID;
+  effectiveActions: string[];
 }
 
 // ============================================================
 // Notifications
 // ============================================================
 
-export type NotificationChannel = "email" | "slack" | "webhook" | "discord" | "telegram";
+export type NotificationChannel =
+  | "email"
+  | "slack"
+  | "webhook"
+  | "discord"
+  | "telegram"
+  | "msteams"
+  | "github"
+  | "gitlab"
+  | "cloudflare";
 
 export interface NotificationConfig {
   id: ID;

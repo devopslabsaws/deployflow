@@ -35,17 +35,25 @@ interface BackupPolicyDialogProps {
   databaseId: string;
 }
 
+type BackupPolicyFormState = {
+  isEnabled: boolean;
+  cronExpression: string;
+  retentionDays: number;
+  s3DestinationId: string;
+  storageLocation: "local" | "s3";
+};
+
 export function BackupPolicyDialog({
   isOpen,
   onOpenChange,
   databaseId,
 }: BackupPolicyDialogProps) {
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<BackupPolicyFormState>({
     isEnabled: false,
     cronExpression: "0 2 * * *",
     retentionDays: 30,
     s3DestinationId: "",
-    storageLocation: "local" as const,
+    storageLocation: "local",
   });
 
   const { data: policy, isLoading } = useBackupPolicy(databaseId);

@@ -11,141 +11,105 @@ namespace DeployFlow.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<int>(
-                name: "CpuTargetPercentage",
-                table: "Services",
-                type: "NUMBER(10)",
-                nullable: true);
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE ""Services"" ADD ""CpuTargetPercentage"" NUMBER(10)';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -1430 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.AddColumn<DateTime>(
-                name: "LastScaledAt",
-                table: "Services",
-                type: "TIMESTAMP(7)",
-                nullable: true);
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE ""Services"" ADD ""LastScaledAt"" TIMESTAMP(7)';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -1430 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.AddColumn<string>(
-                name: "LastScalingAction",
-                table: "Services",
-                type: "NVARCHAR2(50)",
-                maxLength: 50,
-                nullable: true);
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE ""Services"" ADD ""LastScalingAction"" NVARCHAR2(50)';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -1430 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.AddColumn<string>(
-                name: "LastScalingReason",
-                table: "Services",
-                type: "NVARCHAR2(1000)",
-                maxLength: 1000,
-                nullable: true);
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE ""Services"" ADD ""LastScalingReason"" NVARCHAR2(1000)';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -1430 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.AddColumn<int>(
-                name: "MaxReplicas",
-                table: "Services",
-                type: "NUMBER(10)",
-                nullable: false,
-                defaultValue: 1);
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE ""Services"" ADD ""MaxReplicas"" NUMBER(10) DEFAULT 1 NOT NULL';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -1430 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.AddColumn<int>(
-                name: "MemoryTargetPercentage",
-                table: "Services",
-                type: "NUMBER(10)",
-                nullable: true);
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE ""Services"" ADD ""MemoryTargetPercentage"" NUMBER(10)';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -1430 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.AddColumn<int>(
-                name: "MinReplicas",
-                table: "Services",
-                type: "NUMBER(10)",
-                nullable: false,
-                defaultValue: 1);
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE ""Services"" ADD ""MinReplicas"" NUMBER(10) DEFAULT 1 NOT NULL';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -1430 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.AddColumn<string>(
-                name: "CloudflareSshDomain",
-                table: "servers",
-                type: "NVARCHAR2(2000)",
-                nullable: true);
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE ""servers"" ADD ""CloudflareSshDomain"" NVARCHAR2(2000)';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -1430 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.AddColumn<bool>(
-                name: "CloudflareTunnelManual",
-                table: "servers",
-                type: "NUMBER(1)",
-                nullable: false,
-                defaultValue: false);
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE ""servers"" ADD ""CloudflareTunnelManual"" NUMBER(1) DEFAULT 0 NOT NULL';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -1430 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.AddColumn<string>(
-                name: "CloudflareTunnelToken",
-                table: "servers",
-                type: "NVARCHAR2(2000)",
-                nullable: true);
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE ""servers"" ADD ""CloudflareTunnelToken"" NVARCHAR2(2000)';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -1430 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.AddColumn<bool>(
-                name: "DeleteUnusedNetworks",
-                table: "servers",
-                type: "NUMBER(1)",
-                nullable: false,
-                defaultValue: false);
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE ""servers"" ADD ""DeleteUnusedNetworks"" NUMBER(1) DEFAULT 0 NOT NULL';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -1430 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.AddColumn<bool>(
-                name: "DeleteUnusedVolumes",
-                table: "servers",
-                type: "NUMBER(1)",
-                nullable: false,
-                defaultValue: false);
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE ""servers"" ADD ""DeleteUnusedVolumes"" NUMBER(1) DEFAULT 0 NOT NULL';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -1430 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.AddColumn<bool>(
-                name: "DisableAppImageRetention",
-                table: "servers",
-                type: "NUMBER(1)",
-                nullable: false,
-                defaultValue: false);
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE ""servers"" ADD ""DisableAppImageRetention"" NUMBER(1) DEFAULT 0 NOT NULL';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -1430 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.AddColumn<bool>(
-                name: "DockerCleanupForce",
-                table: "servers",
-                type: "NUMBER(1)",
-                nullable: false,
-                defaultValue: false);
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE ""servers"" ADD ""DockerCleanupForce"" NUMBER(1) DEFAULT 0 NOT NULL';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -1430 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.AddColumn<string>(
-                name: "DockerCleanupFrequency",
-                table: "servers",
-                type: "NVARCHAR2(2000)",
-                nullable: false,
-                defaultValue: "");
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE ""servers"" ADD ""DockerCleanupFrequency"" NVARCHAR2(2000) DEFAULT ''1h'' NOT NULL';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -1430 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.AddColumn<string>(
-                name: "ActiveSlot",
-                table: "projects",
-                type: "NVARCHAR2(10)",
-                maxLength: 10,
-                nullable: false,
-                defaultValue: "blue");
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE ""projects"" ADD ""ActiveSlot"" NVARCHAR2(10) DEFAULT ''blue'' NOT NULL';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -1430 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.AddColumn<string>(
-                name: "BlueContainerName",
-                table: "projects",
-                type: "NVARCHAR2(300)",
-                maxLength: 300,
-                nullable: true);
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE ""projects"" ADD ""BlueContainerName"" NVARCHAR2(300)';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -1430 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.AddColumn<string>(
-                name: "GreenContainerName",
-                table: "projects",
-                type: "NVARCHAR2(300)",
-                maxLength: 300,
-                nullable: true);
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE ""projects"" ADD ""GreenContainerName"" NVARCHAR2(300)';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -1430 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.AddColumn<Guid>(
-                name: "S3DestinationId",
-                table: "DatabaseBackups",
-                type: "RAW(16)",
-                nullable: true);
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE ""DatabaseBackups"" ADD ""S3DestinationId"" RAW(16)';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -1430 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.AlterColumn<string>(
-                name: "Source",
-                table: "alerts",
-                type: "NVARCHAR2(450)",
-                nullable: false,
-                oldClrType: typeof(string),
-                oldType: "NVARCHAR2(2000)");
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE ""alerts"" MODIFY ""Source"" NVARCHAR2(450) NOT NULL';
+EXCEPTION WHEN OTHERS THEN NULL;
+END;");
 
             migrationBuilder.CreateTable(
                 name: "backup_policies",
@@ -391,50 +355,50 @@ namespace DeployFlow.Infrastructure.Migrations
                     table.PrimaryKey("PK_volumes", x => x.Id);
                 });
 
-            migrationBuilder.CreateIndex(
-                name: "IX_servers_TenantId_Status",
-                table: "servers",
-                columns: new[] { "TenantId", "Status" });
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'CREATE INDEX ""IX_servers_TenantId_Status"" ON ""servers"" (""TenantId"", ""Status"")';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -955 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_projects_TenantId_UpdatedAt",
-                table: "projects",
-                columns: new[] { "TenantId", "UpdatedAt" });
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'CREATE INDEX ""IX_projects_TenantId_UpdatedAt"" ON ""projects"" (""TenantId"", ""UpdatedAt"")';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -955 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_pipelines_TenantId_CreatedAt",
-                table: "pipelines",
-                columns: new[] { "TenantId", "CreatedAt" });
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'CREATE INDEX ""IX_pipelines_TenantId_CreatedAt"" ON ""pipelines"" (""TenantId"", ""CreatedAt"")';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -955 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_deployments_ProjectId_CreatedAt",
-                table: "deployments",
-                columns: new[] { "ProjectId", "CreatedAt" });
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'CREATE INDEX ""IX_deployments_ProjectId_CreatedAt"" ON ""deployments"" (""ProjectId"", ""CreatedAt"")';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -955 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_deployments_TenantId_CreatedAt",
-                table: "deployments",
-                columns: new[] { "TenantId", "CreatedAt" });
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'CREATE INDEX ""IX_deployments_TenantId_CreatedAt"" ON ""deployments"" (""TenantId"", ""CreatedAt"")';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -955 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_deployments_TenantId_Status_CreatedAt",
-                table: "deployments",
-                columns: new[] { "TenantId", "Status", "CreatedAt" });
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'CREATE INDEX ""IX_deployments_TenantId_Status_CreatedAt"" ON ""deployments"" (""TenantId"", ""Status"", ""CreatedAt"")';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -955 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_deployment_logs_DeploymentId_Timestamp",
-                table: "deployment_logs",
-                columns: new[] { "DeploymentId", "Timestamp" });
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'CREATE INDEX ""IX_deployment_logs_DeploymentId_Timestamp"" ON ""deployment_logs"" (""DeploymentId"", ""Timestamp"")';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -955 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_cost_records_TenantId_RecordedAt",
-                table: "cost_records",
-                columns: new[] { "TenantId", "RecordedAt" });
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'CREATE INDEX ""IX_cost_records_TenantId_RecordedAt"" ON ""cost_records"" (""TenantId"", ""RecordedAt"")';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -955 THEN NULL; ELSE RAISE; END IF;
+END;");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_alerts_TenantId_Source_ResourceId_Status",
-                table: "alerts",
-                columns: new[] { "TenantId", "Source", "ResourceId", "Status" });
+            migrationBuilder.Sql(@"BEGIN
+  EXECUTE IMMEDIATE 'CREATE INDEX ""IX_alerts_TenantId_Source_ResourceId_Status"" ON ""alerts"" (""TenantId"", ""Source"", ""ResourceId"", ""Status"")';
+EXCEPTION WHEN OTHERS THEN IF SQLCODE = -955 THEN NULL; ELSE RAISE; END IF;
+END;");
 
             migrationBuilder.CreateIndex(
                 name: "IX_backup_policies_S3DestinationId",

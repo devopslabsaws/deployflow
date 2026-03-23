@@ -55,6 +55,8 @@ public static class ServiceCollectionExtensions
             new TenantRepository<BackupPolicy>(sp.GetRequiredService<ApplicationDbContext>()));
         services.AddScoped<ITenantRepository<RestoreJob>>(sp =>
             new TenantRepository<RestoreJob>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<TeamInvitation>>(sp =>
+            new TenantRepository<TeamInvitation>(sp.GetRequiredService<ApplicationDbContext>()));
         services.AddScoped<IPipelineRepository, Persistence.Repositories.PipelineRepository>();
         services.AddScoped<IAuditLogRepository, AuditLogRepository>();
         services.AddScoped<IAlertRepository, AlertRepository>();
@@ -66,6 +68,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IDomainRepository, DomainRepository>();
         services.AddScoped<IEnvVariableRepository, EnvVariableRepository>();
         services.AddScoped<INotificationConfigRepository, NotificationConfigRepository>();
+        services.AddScoped<IAlertRuleRepository, AlertRuleRepository>();
 
         // Unit of work
         services.AddScoped<IUnitOfWork, UnitOfWork>();
@@ -91,11 +94,15 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient("notifications");
 
         // Background services
-        services.AddHostedService<DeploymentRunnerService>();
-        services.AddHostedService<ServerHealthCheckService>();
-        services.AddHostedService<AlertEvaluatorService>();
-        services.AddHostedService<ContainerMetricsCollectorService>();
-        services.AddHostedService<CostCalculationService>();
+        var enableBackgroundServices = configuration.GetValue("EnableBackgroundServices", true);
+        if (enableBackgroundServices)
+        {
+            services.AddHostedService<DeploymentRunnerService>();
+            services.AddHostedService<ServerHealthCheckService>();
+            services.AddHostedService<AlertEvaluatorService>();
+            services.AddHostedService<ContainerMetricsCollectorService>();
+            services.AddHostedService<CostCalculationService>();
+        }
 
         return services;
     }

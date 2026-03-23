@@ -103,6 +103,24 @@ public class AuthController : BaseController
         return ToResponse(result);
     }
 
+    /// <summary>Read invitation metadata by token for the accept-invitation page.</summary>
+    [HttpGet("invitations/{token}")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> GetInvitation(string token, CancellationToken ct)
+    {
+        var result = await Mediator.Send(new GetInvitationByTokenQuery(token), ct);
+        return ToResponse(result);
+    }
+
+    /// <summary>Accept an invitation token and create the invited account.</summary>
+    [HttpPost("accept-invitation")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> AcceptInvitation([FromBody] AcceptInvitationRequest request, CancellationToken ct)
+    {
+        var result = await Mediator.Send(new AcceptInvitationCommand(request.Token, request.Name, request.Password), ct);
+        return ToResponse(result);
+    }
+
     /// <summary>Initiate GitHub OAuth sign-in.</summary>
     [HttpGet("github")]
     [EnableRateLimiting("auth")]

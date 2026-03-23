@@ -142,6 +142,20 @@ public class NotificationConfig : TenantEntity
     public string EventsJson { get; set; } = "[]";
 }
 
+public class AlertRule : TenantEntity
+{
+    public string Name { get; set; } = default!;
+    public string Metric { get; set; } = default!;
+    public string Operator { get; set; } = ">";
+    public decimal Threshold { get; set; }
+    public int WindowMinutes { get; set; } = 5;
+    public AlertSeverity Severity { get; set; } = AlertSeverity.Warning;
+    public bool IsEnabled { get; set; } = true;
+    public int CooldownMinutes { get; set; } = 10;
+    public DateTime? LastTriggeredAt { get; set; }
+    public string? Description { get; set; }
+}
+
 public class Alert : TenantEntity
 {
     public string Name { get; set; } = default!;

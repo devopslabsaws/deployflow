@@ -33,6 +33,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
     public DbSet<S3Destination> S3Destinations => Set<S3Destination>();
     public DbSet<BackupPolicy> BackupPolicies => Set<BackupPolicy>();
     public DbSet<RestoreJob> RestoreJobs => Set<RestoreJob>();
+    public DbSet<TeamInvitation> TeamInvitations => Set<TeamInvitation>();
     public DbSet<Pipeline> Pipelines => Set<Pipeline>();
     public DbSet<PipelineStage> PipelineStages => Set<PipelineStage>();
     public DbSet<PipelineStep> PipelineSteps => Set<PipelineStep>();
@@ -43,6 +44,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<CostRecord> CostRecords => Set<CostRecord>();
     public DbSet<NotificationConfig> NotificationConfigs => Set<NotificationConfig>();
+    public DbSet<AlertRule> AlertRules => Set<AlertRule>();
     public DbSet<RefreshTokenRecord> RefreshTokens => Set<RefreshTokenRecord>();
     public DbSet<ResourcePermission> ResourcePermissions => Set<ResourcePermission>();
     public DbSet<Cluster> Clusters => Set<Cluster>();

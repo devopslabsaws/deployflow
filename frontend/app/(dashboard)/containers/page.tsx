@@ -56,85 +56,85 @@ export default function ContainersPage() {
   const [logTarget, setLogTarget] = useState<{ serverId: string; id: string; name: string } | null>(null);
   const { data: containers, isLoading, refetch } = useContainers();
 
-    const startMutation = useStartContainer();
-    const stopMutation = useStopContainer();
-    const restartMutation = useRestartContainer();
-    const removeMutation = useRemoveContainer();
+  const startMutation = useStartContainer();
+  const stopMutation = useStopContainer();
+  const restartMutation = useRestartContainer();
+  const removeMutation = useRemoveContainer();
 
-    const handleStartContainer = (serverId: string, containerId: string) => {
-      startMutation.mutate(
-        { serverId, containerId },
-        {
-          onSuccess: () => {
-            toast.success("Container started successfully");
-            refetch();
-          },
-          onError: (error) => {
-            toast.error("Failed to start container", {
-              description: error instanceof Error ? error.message : "Unknown error",
-            });
-          },
-        }
-      );
-    };
+  const handleStartContainer = (serverId: string, containerId: string) => {
+    startMutation.mutate(
+      { serverId, containerId },
+      {
+        onSuccess: () => {
+          toast.success("Container started successfully");
+          refetch();
+        },
+        onError: (error) => {
+          toast.error("Failed to start container", {
+            description: error instanceof Error ? error.message : "Unknown error",
+          });
+        },
+      }
+    );
+  };
 
-    const handleStopContainer = (serverId: string, containerId: string) => {
-      stopMutation.mutate(
-        { serverId, containerId },
-        {
-          onSuccess: () => {
-            toast.success("Container stopped successfully");
-            refetch();
-          },
-          onError: (error) => {
-            toast.error("Failed to stop container", {
-              description: error instanceof Error ? error.message : "Unknown error",
-            });
-          },
-        }
-      );
-    };
+  const handleStopContainer = (serverId: string, containerId: string) => {
+    stopMutation.mutate(
+      { serverId, containerId },
+      {
+        onSuccess: () => {
+          toast.success("Container stopped successfully");
+          refetch();
+        },
+        onError: (error) => {
+          toast.error("Failed to stop container", {
+            description: error instanceof Error ? error.message : "Unknown error",
+          });
+        },
+      }
+    );
+  };
 
-    const handleRestartContainer = (serverId: string, containerId: string) => {
-      restartMutation.mutate(
-        { serverId, containerId },
-        {
-          onSuccess: () => {
-            toast.success("Container restarted successfully");
-            refetch();
-          },
-          onError: (error) => {
-            toast.error("Failed to restart container", {
-              description: error instanceof Error ? error.message : "Unknown error",
-            });
-          },
-        }
-      );
-    };
+  const handleRestartContainer = (serverId: string, containerId: string) => {
+    restartMutation.mutate(
+      { serverId, containerId },
+      {
+        onSuccess: () => {
+          toast.success("Container restarted successfully");
+          refetch();
+        },
+        onError: (error) => {
+          toast.error("Failed to restart container", {
+            description: error instanceof Error ? error.message : "Unknown error",
+          });
+        },
+      }
+    );
+  };
 
-    const handleRemoveContainer = (serverId: string, containerId: string, name: string) => {
-      setDeleteConfirm({ serverId, id: containerId, name });
-    };
+  const handleRemoveContainer = (serverId: string, containerId: string, name: string) => {
+    setDeleteConfirm({ serverId, id: containerId, name });
+  };
 
-    const confirmRemoveContainer = () => {
-      if (!deleteConfirm) return;
-      removeMutation.mutate(
-        { serverId: deleteConfirm.serverId, containerId: deleteConfirm.id },
-        {
-          onSuccess: () => {
-            toast.success("Container removed successfully");
-            setDeleteConfirm(null);
-            refetch();
-          },
-          onError: (error) => {
-            toast.error("Failed to remove container", {
-              description: error instanceof Error ? error.message : "Unknown error",
-            });
-            setDeleteConfirm(null);
-          },
-        }
-      );
-    };
+  const confirmRemoveContainer = () => {
+    if (!deleteConfirm) return;
+    removeMutation.mutate(
+      { serverId: deleteConfirm.serverId, containerId: deleteConfirm.id },
+      {
+        onSuccess: () => {
+          toast.success("Container removed successfully");
+          setDeleteConfirm(null);
+          refetch();
+        },
+        onError: (error) => {
+          toast.error("Failed to remove container", {
+            description: error instanceof Error ? error.message : "Unknown error",
+          });
+          setDeleteConfirm(null);
+        },
+      }
+    );
+  };
 
   const filtered = containers?.filter(
     (c) => c.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -224,38 +224,39 @@ export default function ContainersPage() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         {!container.status.toLowerCase().startsWith("up") && (
-                            <DropdownMenuItem
-                              onClick={() => handleStartContainer(container.serverId, container.id)}
-                              disabled={startMutation.isPending}
-                            >
+                          <DropdownMenuItem
+                            onClick={() => handleStartContainer(container.serverId, container.id)}
+                            disabled={startMutation.isPending}
+                          >
                             <Play className="h-4 w-4 mr-2" />Start
                           </DropdownMenuItem>
                         )}
                         {container.status.toLowerCase().startsWith("up") && (
-                            <DropdownMenuItem
-                              onClick={() => handleStopContainer(container.serverId, container.id)}
-                              disabled={stopMutation.isPending}
-                            >
+                          <DropdownMenuItem
+                            onClick={() => handleStopContainer(container.serverId, container.id)}
+                            disabled={stopMutation.isPending}
+                          >
                             <Square className="h-4 w-4 mr-2" />Stop
                           </DropdownMenuItem>
                         )}
-                          <DropdownMenuItem
-                            onClick={() => handleRestartContainer(container.serverId, container.id)}
-                            disabled={restartMutation.isPending}
-                          >
+                        <DropdownMenuItem
+                          onClick={() => handleRestartContainer(container.serverId, container.id)}
+                          disabled={restartMutation.isPending}
+                        >
                           <RefreshCw className="h-4 w-4 mr-2" />Restart
                         </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setLogTarget({ serverId: container.serverId, id: container.id, name: container.name })}
+                        >
+                          <FileText className="h-4 w-4 mr-2" />View Logs
+                        </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            className="text-destructive"
-                            onClick={() => handleRemoveContainer(container.serverId, container.id, container.name)}
-                            disabled={removeMutation.isPending}
-                          >
+                        <DropdownMenuItem
+                          className="text-destructive"
+                          onClick={() => handleRemoveContainer(container.serverId, container.id, container.name)}
+                          disabled={removeMutation.isPending}
+                        >
                           <Trash2 className="h-4 w-4 mr-2" />Remove
-                                                <DropdownMenuSeparator />
-                                                <DropdownMenuItem onClick={() => setLogTarget({ serverId: container.serverId, id: container.id, name: container.name })}>
-                                                  <FileText className="h-4 w-4 mr-2" />View Logs
-                                                </DropdownMenuItem>
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -266,67 +267,67 @@ export default function ContainersPage() {
           ))}
       </div>
 
-        <AlertDialog open={!!deleteConfirm} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Remove Container</AlertDialogTitle>
-              <AlertDialogDescription>
-                Are you sure you want to remove the container <strong>{deleteConfirm?.name}</strong>? This action cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <div className="flex gap-2 justify-end">
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={confirmRemoveContainer} disabled={removeMutation.isPending} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                {removeMutation.isPending ? "Removing..." : "Remove"}
-              </AlertDialogAction>
-            </div>
-          </AlertDialogContent>
-        </AlertDialog>
+      <AlertDialog open={!!deleteConfirm} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Container</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove the container <strong>{deleteConfirm?.name}</strong>? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex gap-2 justify-end">
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmRemoveContainer} disabled={removeMutation.isPending} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {removeMutation.isPending ? "Removing..." : "Remove"}
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Container Log Drawer */}
       <ContainerLogDialog target={logTarget} onClose={() => setLogTarget(null)} />
-
-    function ContainerLogDialog({
-      target,
-      onClose,
-    }: {
-      target: { serverId: string; id: string; name: string } | null;
-      onClose: () => void;
-    }) {
-      const { data, isLoading, refetch } = useContainerLogs(
-        target?.serverId ?? "",
-        target?.id ?? "",
-        !!target
-      );
-
-      return (
-        <Dialog open={!!target} onOpenChange={(open) => { if (!open) onClose(); }}>
-          <DialogContent className="max-w-3xl">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 font-mono text-sm">
-                <FileText className="h-4 w-4" />
-                {target?.name} — Logs
-              </DialogTitle>
-            </DialogHeader>
-            <div className="flex justify-end">
-              <button
-                onClick={() => refetch()}
-                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
-              >
-                <RefreshCw className="h-3 w-3" />Refresh
-              </button>
-            </div>
-            <div className="rounded-xl bg-[#0d1117] border border-border/50 overflow-y-auto max-h-96 p-4 font-mono text-xs">
-              {isLoading && <p className="text-muted-foreground">Loading logs...</p>}
-              {!isLoading && !data?.logs && <p className="text-muted-foreground">No logs available.</p>}
-              {data?.logs && data.logs.split("\n").map((line, i) => (
-                <div key={i} className="py-0.5 whitespace-pre-wrap break-all text-[#c9d1d9]">{line}</div>
-              ))}
-            </div>
-          </DialogContent>
-        </Dialog>
-      );
-    }
     </div>
+  );
+}
+
+function ContainerLogDialog({
+  target,
+  onClose,
+}: {
+  target: { serverId: string; id: string; name: string } | null;
+  onClose: () => void;
+}) {
+  const { data, isLoading, refetch } = useContainerLogs(
+    target?.serverId ?? "",
+    target?.id ?? "",
+    !!target
+  );
+
+  return (
+    <Dialog open={!!target} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 font-mono text-sm">
+            <FileText className="h-4 w-4" />
+            {target?.name} - Logs
+          </DialogTitle>
+        </DialogHeader>
+        <div className="flex justify-end">
+          <button
+            onClick={() => refetch()}
+            className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+          >
+            <RefreshCw className="h-3 w-3" />Refresh
+          </button>
+        </div>
+        <div className="rounded-xl bg-[#0d1117] border border-border/50 overflow-y-auto max-h-96 p-4 font-mono text-xs">
+          {isLoading && <p className="text-muted-foreground">Loading logs...</p>}
+          {!isLoading && !data?.logs && <p className="text-muted-foreground">No logs available.</p>}
+          {data?.logs && data.logs.split("\n").map((line, i) => (
+            <div key={i} className="py-0.5 whitespace-pre-wrap break-all text-[#c9d1d9]">{line}</div>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

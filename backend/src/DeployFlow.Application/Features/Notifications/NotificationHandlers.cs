@@ -3,6 +3,7 @@ using DeployFlow.Domain.Entities;
 using DeployFlow.Domain.Interfaces;
 using MediatR;
 using System.Text.Json;
+using System.Net.Http.Json;
 
 namespace DeployFlow.Application.Features.Notifications;
 
@@ -108,5 +109,128 @@ public class UpsertEmailNotificationCommandHandler
 
         await _uow.SaveChangesAsync(ct);
         return Result.Success();
+    }
+}
+
+public record NotificationChannelTestResultDto(
+    string Channel,
+    bool Success,
+    string Message,
+    DateTime TestedAt
+);
+
+public record TestNotificationChannelCommand(string Channel)
+    : IRequest<Result<NotificationChannelTestResultDto>>;
+
+public class TestNotificationChannelCommandHandler
+    : IRequestHandler<TestNotificationChannelCommand, Result<NotificationChannelTestResultDto>>
+{
+    private readonly IUnitOfWork _uow;
+    private readonly ICurrentUser _currentUser;
+    private readonly IHttpClientFactory _http;
+    private readonly IEmailService _emailService;
+
+    public TestNotificationChannelCommandHandler(
+        IUnitOfWork uow,
+        ICurrentUser cu,
+        IHttpClientFactory http,
+        IEmailService emailService)
+    {
+        _uow = uow;
+        _currentUser = cu;
+        _http = http;
+        _emailService = emailService;
+    }
+
+    public async Task<Result<NotificationChannelTestResultDto>> Handle(TestNotificationChannelCommand request, CancellationToken ct)
+    {
+        var channel = request.Channel.Trim().ToLowerInvariant();
+        var configs = await _uow.NotificationConfigs.GetByTenantAsync(_currentUser.TenantId, ct);
+        var cfg = configs.FirstOrDefault(c => c.Channel.ToLower() == channel);
+        if (cfg is null)
+            return Result<NotificationChannelTestResultDto>.Failure("Channel configuration not found.", 404);
+
+        if (!cfg.IsEnabled)
+            return Result<NotificationChannelTestResultDto>.Failure("Channel is disabled.", 400);
+
+        var ok = channel switch
+        {
+            "email" => await SendEmailProbeAsync(cfg.ConfigJson, ct),
+            "slack" => await SendWebhookProbeAsync(GetUrl(cfg.ConfigJson, "webhookUrl"), channel, ct),
+            "msteams" => await SendWebhookProbeAsync(GetUrl(cfg.ConfigJson, "webhookUrl", "url"), channel, ct),
+            "webhook" => await SendWebhookProbeAsync(GetUrl(cfg.ConfigJson, "url", "webhookUrl"), channel, ct),
+            "github" => await SendWebhookProbeAsync(GetUrl(cfg.ConfigJson, "url", "webhookUrl"), channel, ct),
+            "gitlab" => await SendWebhookProbeAsync(GetUrl(cfg.ConfigJson, "url", "webhookUrl"), channel, ct),
+            "cloudflare" => await SendWebhookProbeAsync(GetUrl(cfg.ConfigJson, "url", "webhookUrl"), channel, ct),
+            _ => false
+        };
+
+        if (!ok)
+            return Result<NotificationChannelTestResultDto>.Failure("Channel test failed. Verify credentials and destination URL.", 400);
+
+        return Result<NotificationChannelTestResultDto>.Success(new NotificationChannelTestResultDto(
+            channel,
+            true,
+            "Test notification sent successfully.",
+            DateTime.UtcNow));
+    }
+
+    private async Task<bool> SendEmailProbeAsync(string configJson, CancellationToken ct)
+    {
+        var to = ParseString(configJson, "to") ?? _currentUser.Email;
+        if (string.IsNullOrWhiteSpace(to)) return false;
+        try
+        {
+            await _emailService.SendAsync(to, "DeployFlow notification test", "<p>Test notification sent successfully.</p>", ct);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private async Task<bool> SendWebhookProbeAsync(string? url, string channel, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return false;
+
+        try
+        {
+            var client = _http.CreateClient("notifications");
+            var response = await client.PostAsJsonAsync(url, new
+            {
+                eventType = "notification.test",
+                channel,
+                message = "DeployFlow notification channel test"
+            }, ct);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string? GetUrl(string configJson, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            var value = ParseString(configJson, key);
+            if (!string.IsNullOrWhiteSpace(value)) return value;
+        }
+        return null;
+    }
+
+    private static string? ParseString(string json, string key)
+    {
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            return doc.RootElement.TryGetProperty(key, out var p) ? p.GetString() : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

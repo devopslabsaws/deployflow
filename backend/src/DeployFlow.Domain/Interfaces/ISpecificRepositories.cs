@@ -144,3 +144,8 @@ public interface INotificationConfigRepository : ITenantRepository<NotificationC
 {
     Task<IReadOnlyList<NotificationConfig>> GetEnabledByTenantAsync(Guid tenantId, CancellationToken ct = default);
 }
+
+public interface IAlertRuleRepository : ITenantRepository<AlertRule>
+{
+    Task<IReadOnlyList<AlertRule>> GetEnabledByTenantAsync(Guid tenantId, CancellationToken ct = default);
+}

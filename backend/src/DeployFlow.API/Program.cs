@@ -155,7 +155,18 @@ builder.Services.AddHealthChecks();
 var app = builder.Build();
 
 // ─── Migrate DB ───────────────────────────────────────────────────────────────
-await app.Services.MigrateAndSeedAsync();
+var runMigrationsOnStartup = builder.Configuration.GetValue("RunMigrationsOnStartup", true);
+if (runMigrationsOnStartup)
+{
+    try
+    {
+        await app.Services.MigrateAndSeedAsync();
+    }
+    catch (Exception ex) when (app.Environment.IsDevelopment())
+    {
+        app.Logger.LogError(ex, "Database migration on startup failed in Development. Continuing startup with existing schema.");
+    }
+}
 
 // ─── Middleware Pipeline ──────────────────────────────────────────────────────
 if (app.Environment.IsDevelopment())
