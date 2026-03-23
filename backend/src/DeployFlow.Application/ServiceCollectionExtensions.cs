@@ -67,7 +67,7 @@ public class AuditBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TR
         return response;
     }
 
-    private void FireAndForgetAudit(string requestName, string suffix, CancellationToken _)
+    private void FireAndForgetAudit(string requestName, string suffix, CancellationToken ignoredCt)
     {
         var (resourceType, verb) = ParseRequestName(requestName);
         var resourceId = TryGetResourceId();

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { ArrowLeft, Settings, Play, Square, RefreshCw, Loader2, Activity, Box, Cpu, MemoryStick } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -9,11 +10,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { useQuery } from "@tanstack/react-query";
-import { apiClient } from "@/lib/api-client";
-import { useStartService, useStopService, useRestartService } from "@/hooks/use-api";
+import {
+  useService,
+  useServiceScalingPolicy,
+  useStartService,
+  useStopService,
+  useRestartService,
+  useUpdateServiceScalingPolicy,
+} from "@/hooks/use-api";
 import { toast } from "sonner";
-import type { Service } from "@/types";
 
 const statusColors: Record<string, string> = {
   running:  "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400",
@@ -24,16 +29,30 @@ const statusColors: Record<string, string> = {
 
 export default function ServiceDetailPage({ params }: { params: { id: string } }) {
   const { id } = params;
-
-  const { data: service, isLoading } = useQuery({
-    queryKey: ["services", "detail", id],
-    queryFn: () => apiClient.get<Service>(`/services/${id}`),
-    enabled: !!id,
+  const [scalingForm, setScalingForm] = useState({
+    minReplicas: 1,
+    maxReplicas: 1,
+    cpuTargetPercentage: "",
+    memoryTargetPercentage: "",
   });
+
+  const { data: service, isLoading } = useService(id);
+  const { data: scalingPolicy, isLoading: isScalingPolicyLoading } = useServiceScalingPolicy(id);
 
   const start   = useStartService();
   const stop    = useStopService();
   const restart = useRestartService();
+  const updateScalingPolicy = useUpdateServiceScalingPolicy();
+
+  useEffect(() => {
+    if (!scalingPolicy) return;
+    setScalingForm({
+      minReplicas: scalingPolicy.minReplicas,
+      maxReplicas: scalingPolicy.maxReplicas,
+      cpuTargetPercentage: scalingPolicy.cpuTargetPercentage?.toString() ?? "",
+      memoryTargetPercentage: scalingPolicy.memoryTargetPercentage?.toString() ?? "",
+    });
+  }, [scalingPolicy]);
 
   const handleStart = async () => {
     try { await start.mutateAsync(id); toast.success("Service starting…"); }
@@ -48,6 +67,21 @@ export default function ServiceDetailPage({ params }: { params: { id: string } }
   const handleRestart = async () => {
     try { await restart.mutateAsync(id); toast.success("Service restarting…"); }
     catch (e: any) { toast.error("Failed to restart service", { description: e.message }); }
+  };
+
+  const handleSaveScalingPolicy = async () => {
+    try {
+      await updateScalingPolicy.mutateAsync({
+        id,
+        minReplicas: Number(scalingForm.minReplicas),
+        maxReplicas: Number(scalingForm.maxReplicas),
+        cpuTargetPercentage: scalingForm.cpuTargetPercentage ? Number(scalingForm.cpuTargetPercentage) : undefined,
+        memoryTargetPercentage: scalingForm.memoryTargetPercentage ? Number(scalingForm.memoryTargetPercentage) : undefined,
+      });
+      toast.success("Autoscaling policy saved.");
+    } catch (e: any) {
+      toast.error("Failed to save autoscaling policy", { description: e.message });
+    }
   };
 
   if (isLoading) {
@@ -105,6 +139,7 @@ export default function ServiceDetailPage({ params }: { params: { id: string } }
         <TabsList>
           <TabsTrigger value="overview"><Activity className="h-3.5 w-3.5 mr-1.5" />Overview</TabsTrigger>
           <TabsTrigger value="settings"><Settings className="h-3.5 w-3.5 mr-1.5" />Settings</TabsTrigger>
+          <TabsTrigger value="autoscaling"><Cpu className="h-3.5 w-3.5 mr-1.5" />Autoscaling</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-4 space-y-4">
@@ -175,6 +210,104 @@ export default function ServiceDetailPage({ params }: { params: { id: string } }
               <Button size="sm" onClick={() => toast.info("Settings update requires backend implementation.")}>
                 Save Changes
               </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="autoscaling" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Scaling Policy</CardTitle>
+              <CardDescription className="text-xs">Persist min/max replicas and CPU or memory thresholds for autoscaling decisions.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Min Replicas</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={scalingForm.minReplicas}
+                    onChange={(e) => setScalingForm((current) => ({ ...current, minReplicas: Number(e.target.value) || 0 }))}
+                    disabled={isScalingPolicyLoading || updateScalingPolicy.isPending}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Max Replicas</Label>
+                  <Input
+                    type="number"
+                    min={Math.max(0, scalingForm.minReplicas)}
+                    value={scalingForm.maxReplicas}
+                    onChange={(e) => setScalingForm((current) => ({ ...current, maxReplicas: Number(e.target.value) || 0 }))}
+                    disabled={isScalingPolicyLoading || updateScalingPolicy.isPending}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">CPU Target %</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={100}
+                    placeholder="75"
+                    value={scalingForm.cpuTargetPercentage}
+                    onChange={(e) => setScalingForm((current) => ({ ...current, cpuTargetPercentage: e.target.value }))}
+                    disabled={isScalingPolicyLoading || updateScalingPolicy.isPending}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Memory Target %</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={100}
+                    placeholder="80"
+                    value={scalingForm.memoryTargetPercentage}
+                    onChange={(e) => setScalingForm((current) => ({ ...current, memoryTargetPercentage: e.target.value }))}
+                    disabled={isScalingPolicyLoading || updateScalingPolicy.isPending}
+                  />
+                </div>
+              </div>
+
+              <Button
+                size="sm"
+                onClick={handleSaveScalingPolicy}
+                disabled={isScalingPolicyLoading || updateScalingPolicy.isPending || scalingForm.maxReplicas < scalingForm.minReplicas}
+              >
+                {updateScalingPolicy.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                Save Scaling Policy
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Latest Scaling Decision</CardTitle>
+              <CardDescription className="text-xs">Current replica range and the most recent trigger reason recorded for this service.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <p className="text-xs text-muted-foreground">Current Replicas</p>
+                  <p className="font-medium">{scalingPolicy?.currentReplicas ?? service.replicas ?? 1}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Last Action</p>
+                  <p className="font-medium capitalize">{scalingPolicy?.lastScalingAction ?? "No scaling action recorded"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Last Updated</p>
+                  <p className="font-medium">
+                    {scalingPolicy?.lastScaledAt ? new Date(scalingPolicy.lastScaledAt).toLocaleString() : "Never"}
+                  </p>
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Trigger Reason</p>
+                <p className="font-medium">{scalingPolicy?.lastScalingReason ?? "No trigger reason has been recorded yet."}</p>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

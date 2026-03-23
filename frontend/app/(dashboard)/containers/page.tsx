@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import {
-  Container, Plus, Play, Square, RefreshCw, Trash2, MoreVertical,
-  Activity, Search,
+  Container, Play, Square, RefreshCw, Trash2, MoreVertical,
+  Activity, Search, FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,8 +14,24 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useContainers } from "@/hooks/use-api";
+import { useContainers, useContainerLogs } from "@/hooks/use-api";
 import { toast } from "sonner";
+import { useStartContainer, useStopContainer, useRestartContainer, useRemoveContainer } from "@/hooks/use-api";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const statusColors: Record<string, string> = {
   up: "text-success",
@@ -36,7 +52,89 @@ function getStatusColor(status: string): string {
 
 export default function ContainersPage() {
   const [search, setSearch] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState<{ serverId: string; id: string; name: string } | null>(null);
+  const [logTarget, setLogTarget] = useState<{ serverId: string; id: string; name: string } | null>(null);
   const { data: containers, isLoading, refetch } = useContainers();
+
+    const startMutation = useStartContainer();
+    const stopMutation = useStopContainer();
+    const restartMutation = useRestartContainer();
+    const removeMutation = useRemoveContainer();
+
+    const handleStartContainer = (serverId: string, containerId: string) => {
+      startMutation.mutate(
+        { serverId, containerId },
+        {
+          onSuccess: () => {
+            toast.success("Container started successfully");
+            refetch();
+          },
+          onError: (error) => {
+            toast.error("Failed to start container", {
+              description: error instanceof Error ? error.message : "Unknown error",
+            });
+          },
+        }
+      );
+    };
+
+    const handleStopContainer = (serverId: string, containerId: string) => {
+      stopMutation.mutate(
+        { serverId, containerId },
+        {
+          onSuccess: () => {
+            toast.success("Container stopped successfully");
+            refetch();
+          },
+          onError: (error) => {
+            toast.error("Failed to stop container", {
+              description: error instanceof Error ? error.message : "Unknown error",
+            });
+          },
+        }
+      );
+    };
+
+    const handleRestartContainer = (serverId: string, containerId: string) => {
+      restartMutation.mutate(
+        { serverId, containerId },
+        {
+          onSuccess: () => {
+            toast.success("Container restarted successfully");
+            refetch();
+          },
+          onError: (error) => {
+            toast.error("Failed to restart container", {
+              description: error instanceof Error ? error.message : "Unknown error",
+            });
+          },
+        }
+      );
+    };
+
+    const handleRemoveContainer = (serverId: string, containerId: string, name: string) => {
+      setDeleteConfirm({ serverId, id: containerId, name });
+    };
+
+    const confirmRemoveContainer = () => {
+      if (!deleteConfirm) return;
+      removeMutation.mutate(
+        { serverId: deleteConfirm.serverId, containerId: deleteConfirm.id },
+        {
+          onSuccess: () => {
+            toast.success("Container removed successfully");
+            setDeleteConfirm(null);
+            refetch();
+          },
+          onError: (error) => {
+            toast.error("Failed to remove container", {
+              description: error instanceof Error ? error.message : "Unknown error",
+            });
+            setDeleteConfirm(null);
+          },
+        }
+      );
+    };
 
   const filtered = containers?.filter(
     (c) => c.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -126,21 +224,38 @@ export default function ContainersPage() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         {!container.status.toLowerCase().startsWith("up") && (
-                          <DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleStartContainer(container.serverId, container.id)}
+                              disabled={startMutation.isPending}
+                            >
                             <Play className="h-4 w-4 mr-2" />Start
                           </DropdownMenuItem>
                         )}
                         {container.status.toLowerCase().startsWith("up") && (
-                          <DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleStopContainer(container.serverId, container.id)}
+                              disabled={stopMutation.isPending}
+                            >
                             <Square className="h-4 w-4 mr-2" />Stop
                           </DropdownMenuItem>
                         )}
-                        <DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleRestartContainer(container.serverId, container.id)}
+                            disabled={restartMutation.isPending}
+                          >
                           <RefreshCw className="h-4 w-4 mr-2" />Restart
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-destructive">
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => handleRemoveContainer(container.serverId, container.id, container.name)}
+                            disabled={removeMutation.isPending}
+                          >
                           <Trash2 className="h-4 w-4 mr-2" />Remove
+                                                <DropdownMenuSeparator />
+                                                <DropdownMenuItem onClick={() => setLogTarget({ serverId: container.serverId, id: container.id, name: container.name })}>
+                                                  <FileText className="h-4 w-4 mr-2" />View Logs
+                                                </DropdownMenuItem>
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -150,6 +265,68 @@ export default function ContainersPage() {
             </motion.div>
           ))}
       </div>
+
+        <AlertDialog open={!!deleteConfirm} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove Container</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to remove the container <strong>{deleteConfirm?.name}</strong>? This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="flex gap-2 justify-end">
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmRemoveContainer} disabled={removeMutation.isPending} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                {removeMutation.isPending ? "Removing..." : "Remove"}
+              </AlertDialogAction>
+            </div>
+          </AlertDialogContent>
+        </AlertDialog>
+
+      {/* Container Log Drawer */}
+      <ContainerLogDialog target={logTarget} onClose={() => setLogTarget(null)} />
+
+    function ContainerLogDialog({
+      target,
+      onClose,
+    }: {
+      target: { serverId: string; id: string; name: string } | null;
+      onClose: () => void;
+    }) {
+      const { data, isLoading, refetch } = useContainerLogs(
+        target?.serverId ?? "",
+        target?.id ?? "",
+        !!target
+      );
+
+      return (
+        <Dialog open={!!target} onOpenChange={(open) => { if (!open) onClose(); }}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 font-mono text-sm">
+                <FileText className="h-4 w-4" />
+                {target?.name} — Logs
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex justify-end">
+              <button
+                onClick={() => refetch()}
+                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+              >
+                <RefreshCw className="h-3 w-3" />Refresh
+              </button>
+            </div>
+            <div className="rounded-xl bg-[#0d1117] border border-border/50 overflow-y-auto max-h-96 p-4 font-mono text-xs">
+              {isLoading && <p className="text-muted-foreground">Loading logs...</p>}
+              {!isLoading && !data?.logs && <p className="text-muted-foreground">No logs available.</p>}
+              {data?.logs && data.logs.split("\n").map((line, i) => (
+                <div key={i} className="py-0.5 whitespace-pre-wrap break-all text-[#c9d1d9]">{line}</div>
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
+      );
+    }
     </div>
   );
 }

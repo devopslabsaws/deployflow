@@ -5,10 +5,8 @@ import { motion } from "framer-motion";
 import {
   Activity,
   AlertTriangle,
-  Server,
   RefreshCw,
   Clock,
-  TrendingUp,
   Cpu,
   MemoryStick,
   HardDrive,
@@ -36,31 +34,8 @@ import {
   LineChart,
   Line,
 } from "recharts";
-import { useServers, useAlerts } from "@/hooks/use-api";
+import { useServers, useAlerts, useMonitoringSummary, useMonitoringTimeSeries, useMonitoringNetwork } from "@/hooks/use-api";
 import { cn } from "@/lib/utils";
-
-// Generate mock time-series data
-const generateTimeSeries = (points: number, base: number, variance: number) =>
-  Array.from({ length: points }, (_, i) => {
-    const time = new Date(Date.now() - (points - i) * 60000);
-    return {
-      time: time.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }),
-      value: Math.max(0, Math.min(100, base + (Math.random() - 0.5) * variance * 2)),
-    };
-  });
-
-const cpuData = generateTimeSeries(30, 65, 20);
-const memData = generateTimeSeries(30, 72, 12);
-const diskData = generateTimeSeries(30, 48, 5);
-const networkData = Array.from({ length: 30 }, (_, i) => ({
-  time: new Date(Date.now() - (30 - i) * 60000).toLocaleTimeString("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }),
-  in: Math.random() * 50 + 10,
-  out: Math.random() * 30 + 5,
-}));
 
 const severityConfig = {
   info: "bg-info/10 text-info border-info/30",
@@ -71,10 +46,36 @@ const severityConfig = {
 export default function MonitoringPage() {
   const [selectedServer, setSelectedServer] = useState<string>("all");
   const [timeRange, setTimeRange] = useState("1h");
+
+  const serverId = selectedServer === "all" ? undefined : selectedServer;
+
   const { data: servers, refetch: refetchServers } = useServers();
   const { data: alerts, refetch: refetchAlerts } = useAlerts();
+  const { data: summary, refetch: refetchSummary } = useMonitoringSummary(serverId, timeRange);
+  const { data: cpuSeries, refetch: refetchCpu } = useMonitoringTimeSeries("cpu", serverId, timeRange);
+  const { data: memSeries, refetch: refetchMem } = useMonitoringTimeSeries("memory", serverId, timeRange);
+  const { data: diskSeries, refetch: refetchDisk } = useMonitoringTimeSeries("disk", serverId, timeRange);
+  const { data: netSeries, refetch: refetchNet } = useMonitoringNetwork(serverId, timeRange);
 
   const activeAlerts = alerts?.filter((a) => a.status === "active") ?? [];
+
+  const cpuData = (cpuSeries ?? []).map((p) => ({
+    time: new Date(p.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }),
+    value: p.value,
+  }));
+  const memData = (memSeries ?? []).map((p) => ({
+    time: new Date(p.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }),
+    value: p.value,
+  }));
+  const diskData = (diskSeries ?? []).map((p) => ({
+    time: new Date(p.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }),
+    value: p.value,
+  }));
+  const networkData = (netSeries ?? []).map((p) => ({
+    time: new Date(p.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }),
+    in: p.inbound,
+    out: p.outbound,
+  }));
 
   return (
     <div className="space-y-6">
@@ -108,7 +109,20 @@ export default function MonitoringPage() {
               <SelectItem value="24h">24h</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { refetchServers(); refetchAlerts(); }}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => {
+              refetchServers();
+              refetchAlerts();
+              refetchSummary();
+              refetchCpu();
+              refetchMem();
+              refetchDisk();
+              refetchNet();
+            }}
+          >
             <RefreshCw className="w-3.5 h-3.5" />Refresh
           </Button>
         </div>
@@ -135,38 +149,38 @@ export default function MonitoringPage() {
         {[
           {
             label: "Avg CPU",
-            value: "65%",
+            value: `${(summary?.avgCpu ?? 0).toFixed(1)}%`,
             icon: Cpu,
             color: "text-blue-500",
             bg: "bg-blue-500/10",
-            trend: "+2%",
-            positive: false,
+            trend: `${summary?.sampleCount ?? 0} samples`,
+            positive: true,
           },
           {
             label: "Avg Memory",
-            value: "72%",
+            value: `${(summary?.avgMemory ?? 0).toFixed(1)}%`,
             icon: MemoryStick,
             color: "text-purple-500",
             bg: "bg-purple-500/10",
-            trend: "-4%",
+            trend: `${summary?.sampleCount ?? 0} samples`,
             positive: true,
           },
           {
             label: "Avg Disk",
-            value: "48%",
+            value: `${(summary?.avgDisk ?? 0).toFixed(1)}%`,
             icon: HardDrive,
             color: "text-orange-500",
             bg: "bg-orange-500/10",
-            trend: "+1%",
-            positive: false,
+            trend: `${summary?.sampleCount ?? 0} samples`,
+            positive: true,
           },
           {
             label: "Network In",
-            value: "34 MB/s",
+            value: `${(summary?.avgNetworkInMbps ?? 0).toFixed(1)} MB/s`,
             icon: Network,
             color: "text-success",
             bg: "bg-success/10",
-            trend: "+12%",
+            trend: `${(summary?.avgNetworkOutMbps ?? 0).toFixed(1)} MB/s out`,
             positive: true,
           },
         ].map((stat) => (

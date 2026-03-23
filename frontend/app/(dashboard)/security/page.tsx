@@ -21,11 +21,13 @@ import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TwoFaDialog } from "@/components/settings/two-fa-dialog";
 import { useAuthStore } from "@/store/auth-store";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 
 export default function SecurityPage() {
   const { user } = useAuthStore();
   const [addKeyOpen, setAddKeyOpen] = useState(false);
   const [twoFaOpen, setTwoFaOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [keyForm, setKeyForm] = useState({ name: "", privateKey: "", passphrase: "" });
   const [showKey, setShowKey] = useState(false);
   const { data: sshKeys, isLoading } = useSshKeys();
@@ -47,10 +49,10 @@ export default function SecurityPage() {
     }
   };
 
-  const handleDeleteKey = async (id: string, name: string) => {
-    if (!confirm(`Delete SSH key "${name}"?`)) return;
+  const handleDeleteKey = async () => {
+    if (!deleteTarget) return;
     try {
-      await deleteSshKey.mutateAsync(id);
+      await deleteSshKey.mutateAsync(deleteTarget.id);
       toast.success("SSH key deleted.");
     } catch (e: any) {
       toast.error("Failed to delete key", { description: e.message });
@@ -120,7 +122,7 @@ export default function SecurityPage() {
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8 text-destructive hover:text-destructive"
-                          onClick={() => handleDeleteKey(key.id, key.name)}
+                          onClick={() => setDeleteTarget({ id: key.id, name: key.name })}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -229,6 +231,18 @@ export default function SecurityPage() {
         open={twoFaOpen}
         onOpenChange={setTwoFaOpen}
         isEnabled={user?.twoFactorEnabled}
+      />
+
+      <ConfirmActionDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title="Delete SSH Key"
+        description={deleteTarget
+          ? `Delete SSH key \"${deleteTarget.name}\"?`
+          : "Delete this SSH key?"}
+        confirmLabel="Delete Key"
+        isConfirming={deleteSshKey.isPending}
+        onConfirm={handleDeleteKey}
       />
     </div>
   );

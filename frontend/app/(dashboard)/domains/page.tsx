@@ -21,6 +21,7 @@ import {
 import { useDomains, useAddDomain, useDeleteDomain } from "@/hooks/use-api";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 
 const statusConfig = {
   active: { icon: CheckCircle, color: "text-success", label: "Active" },
@@ -31,6 +32,7 @@ const statusConfig = {
 
 export default function DomainsPage() {
   const [addOpen, setAddOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [form, setForm] = useState({ domainName: "", sslEnabled: true });
   const { data: domains, isLoading } = useDomains();
   const addDomain = useAddDomain();
@@ -48,10 +50,10 @@ export default function DomainsPage() {
     }
   };
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Remove domain "${name}"?`)) return;
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
     try {
-      await deleteDomain.mutateAsync(id);
+      await deleteDomain.mutateAsync(deleteTarget.id);
       toast.success("Domain removed.");
     } catch (e: any) {
       toast.error("Failed to remove domain", { description: e.message });
@@ -129,7 +131,7 @@ export default function DomainsPage() {
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-destructive"
-                          onClick={() => handleDelete(domain.id, domain.name)}
+                          onClick={() => setDeleteTarget({ id: domain.id, name: domain.name })}
                         >
                           <Trash2 className="h-4 w-4 mr-2" />Remove
                         </DropdownMenuItem>
@@ -173,6 +175,18 @@ export default function DomainsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmActionDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title="Remove Domain"
+        description={deleteTarget
+          ? `Remove domain \"${deleteTarget.name}\" from this project?`
+          : "Remove this domain?"}
+        confirmLabel="Remove Domain"
+        isConfirming={deleteDomain.isPending}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }

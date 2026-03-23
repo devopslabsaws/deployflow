@@ -4,6 +4,10 @@
 node_modules/
 out/
 
+# .NET build output
+**/bin/
+**/obj/
+
 # Logs
 *.log
 

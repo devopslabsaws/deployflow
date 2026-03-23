@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Plus,
@@ -30,7 +30,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { usePipelines, useTriggerPipeline } from "@/hooks/use-api";
+import { usePipelines, useStartPipelineRun } from "@/hooks/use-api";
 import { formatRelativeTime, formatDuration, cn } from "@/lib/utils";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -46,14 +46,20 @@ const statusConfig: Record<PipelineStatus, { label: string; color: string; icon:
 
 export default function PipelinesPage() {
   const { data: pipelines, isLoading, refetch } = usePipelines();
-  const triggerPipeline = useTriggerPipeline();
+  const startPipelineRun = useStartPipelineRun();
+  const [pendingRunIds, setPendingRunIds] = useState<string[]>([]);
+
+  const pendingRunSet = useMemo(() => new Set(pendingRunIds), [pendingRunIds]);
 
   const handleTrigger = async (id: string, name: string) => {
     try {
-      await triggerPipeline.mutateAsync(id);
-      toast.success(`Pipeline "${name}" triggered!`);
+      setPendingRunIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+      await startPipelineRun.mutateAsync(id);
+      toast.success(`Pipeline "${name}" run started.`);
     } catch (e: any) {
-      toast.error("Failed to trigger pipeline", { description: e.message });
+      toast.error("Failed to start pipeline run", { description: e.message });
+    } finally {
+      setPendingRunIds((prev) => prev.filter((x) => x !== id));
     }
   };
 
@@ -93,6 +99,7 @@ export default function PipelinesPage() {
               key={pipeline.id}
               pipeline={pipeline}
               onTrigger={() => handleTrigger(pipeline.id, pipeline.name)}
+              runPending={pendingRunSet.has(pipeline.id)}
             />
           ))}
         </div>
@@ -101,8 +108,9 @@ export default function PipelinesPage() {
   );
 }
 
-function PipelineCard({ pipeline, onTrigger }: { pipeline: Pipeline; onTrigger: () => void }) {
-  const cfg = statusConfig[pipeline.status];
+function PipelineCard({ pipeline, onTrigger, runPending }: { pipeline: Pipeline; onTrigger: () => void; runPending?: boolean }) {
+  const effectiveStatus = runPending ? "running" : pipeline.status;
+  const cfg = statusConfig[effectiveStatus as PipelineStatus];
   const StatusIcon = cfg.icon;
   const totalSteps = pipeline.stages.reduce((a, s) => a + s.steps.length, 0);
 
@@ -114,9 +122,9 @@ function PipelineCard({ pipeline, onTrigger }: { pipeline: Pipeline; onTrigger: 
             <div className="flex items-center gap-3">
               <div className={cn(
                 "w-9 h-9 rounded-xl flex items-center justify-center",
-                pipeline.status === "running" ? "bg-blue-500/10" : "bg-muted"
+                effectiveStatus === "running" ? "bg-blue-500/10" : "bg-muted"
               )}>
-                <GitBranch className={cn("w-5 h-5", pipeline.status === "running" ? "text-blue-500" : "text-muted-foreground")} />
+                <GitBranch className={cn("w-5 h-5", effectiveStatus === "running" ? "text-blue-500" : "text-muted-foreground")} />
               </div>
               <div>
                 <Link href={`/pipelines/${pipeline.id}`} className="font-semibold text-sm hover:text-primary transition-colors">
@@ -130,7 +138,7 @@ function PipelineCard({ pipeline, onTrigger }: { pipeline: Pipeline; onTrigger: 
 
             <div className="flex items-center gap-3">
               <div className={cn("flex items-center gap-1.5 text-sm", cfg.color)}>
-                <StatusIcon className={cn("w-4 h-4", pipeline.status === "running" && "animate-spin")} />
+                <StatusIcon className={cn("w-4 h-4", effectiveStatus === "running" && "animate-spin")} />
                 <span className="font-medium">{cfg.label}</span>
               </div>
 
@@ -141,7 +149,7 @@ function PipelineCard({ pipeline, onTrigger }: { pipeline: Pipeline; onTrigger: 
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={onTrigger} disabled={pipeline.status === "running"}>
+                  <DropdownMenuItem onClick={onTrigger} disabled={effectiveStatus === "running" || !!runPending}>
                     <Play className="mr-2 w-4 h-4" />Run Now
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
@@ -204,8 +212,8 @@ function PipelineCard({ pipeline, onTrigger }: { pipeline: Pipeline; onTrigger: 
               >
                 {pipeline.isEnabled ? "Enabled" : "Disabled"}
               </Badge>
-              <Button size="sm" variant="outline" className="h-6 text-xs" onClick={onTrigger}>
-                <Play className="w-3 h-3 mr-1" />Run
+              <Button size="sm" variant="outline" className="h-6 text-xs" onClick={onTrigger} disabled={effectiveStatus === "running" || !!runPending}>
+                <Play className="w-3 h-3 mr-1" />{runPending ? "Starting..." : "Run"}
               </Button>
             </div>
           </div>

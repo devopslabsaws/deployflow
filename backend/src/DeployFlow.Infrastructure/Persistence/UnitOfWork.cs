@@ -1,3 +1,4 @@
+using DeployFlow.Domain.Entities;
 using DeployFlow.Domain.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -15,6 +16,10 @@ public class UnitOfWork : IUnitOfWork
     public IServerRepository Servers { get; }
     public IServiceRepository Services { get; }
     public IDatabaseRepository Databases { get; }
+    public IDatabaseBackupRepository DatabaseBackups { get; }
+    public ITenantRepository<S3Destination> S3Destinations { get; }
+    public ITenantRepository<BackupPolicy> BackupPolicies { get; }
+    public ITenantRepository<RestoreJob> RestoreJobs { get; }
     public IPipelineRepository Pipelines { get; }
     public IAuditLogRepository AuditLogs { get; }
     public IAlertRepository Alerts { get; }
@@ -33,6 +38,10 @@ public class UnitOfWork : IUnitOfWork
         IServerRepository servers,
         IServiceRepository services,
         IDatabaseRepository databases,
+        IDatabaseBackupRepository databaseBackups,
+        ITenantRepository<S3Destination> s3Destinations,
+        ITenantRepository<BackupPolicy> backupPolicies,
+        ITenantRepository<RestoreJob> restoreJobs,
         IPipelineRepository pipelines,
         IAuditLogRepository auditLogs,
         IAlertRepository alerts,
@@ -50,6 +59,10 @@ public class UnitOfWork : IUnitOfWork
         Servers = servers;
         Services = services;
         Databases = databases;
+        DatabaseBackups = databaseBackups;
+        S3Destinations = s3Destinations;
+        BackupPolicies = backupPolicies;
+        RestoreJobs = restoreJobs;
         Pipelines = pipelines;
         AuditLogs = auditLogs;
         Alerts = alerts;

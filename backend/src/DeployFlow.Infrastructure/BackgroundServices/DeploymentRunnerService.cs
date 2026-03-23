@@ -110,7 +110,7 @@ public class DeploymentRunnerService : BackgroundService
 
             if (server is null)
             {
-                await FailDeploymentAsync(deployment, project, "No server assigned to project.", uow, notification, ct);
+                await FailDeploymentAsync(deployment, project, "No server assigned to project.", uow, _broadcaster, notification, ct);
                 return;
             }
 
@@ -121,7 +121,7 @@ public class DeploymentRunnerService : BackgroundService
 
             if (sshKey is null)
             {
-                await FailDeploymentAsync(deployment, project, "No SSH key configured on server.", uow, notification, ct);
+                await FailDeploymentAsync(deployment, project, "No SSH key configured on server.", uow, _broadcaster, notification, ct);
                 return;
             }
 
@@ -151,13 +151,14 @@ public class DeploymentRunnerService : BackgroundService
                     await FailDeploymentAsync(deployment, project, "Blue/Green deployment failed.", uow, _broadcaster, notification, ct);
                     return;
                 }
-                var url = project.CustomDomain is not null ? $"https://{project.CustomDomain}" : null;
-                deployment.MarkSucceeded(url);
+
+                var blueGreenUrl = project.CustomDomain is not null ? $"https://{project.CustomDomain}" : null;
+                deployment.MarkSucceeded(blueGreenUrl);
                 project.RecordDeployment(deployment.Id, DeploymentStatus.Healthy);
                 await uow.SaveChangesAsync(ct);
                 await _broadcaster.BroadcastStatusAsync(deploymentId, "healthy", ct);
                 await AddLogAsync(db, _broadcaster, deployment.Id, "✅ Blue/Green deployment succeeded!", ct: ct);
-                await notification.NotifyDeploymentSucceeded(deployment.TenantId, project.Id, deploymentId, project.Name, url, ct);
+                await notification.NotifyDeploymentSucceeded(deployment.TenantId, project.Id, deploymentId, project.Name, blueGreenUrl, ct);
                 _logger.LogInformation("Blue/Green deployment {Id} succeeded", deploymentId);
                 return;
             }

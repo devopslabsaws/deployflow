@@ -30,6 +30,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
     public DbSet<Service> Services => Set<Service>();
     public DbSet<DatabaseInstance> Databases => Set<DatabaseInstance>();
     public DbSet<DatabaseBackup> DatabaseBackups => Set<DatabaseBackup>();
+    public DbSet<S3Destination> S3Destinations => Set<S3Destination>();
+    public DbSet<BackupPolicy> BackupPolicies => Set<BackupPolicy>();
+    public DbSet<RestoreJob> RestoreJobs => Set<RestoreJob>();
     public DbSet<Pipeline> Pipelines => Set<Pipeline>();
     public DbSet<PipelineStage> PipelineStages => Set<PipelineStage>();
     public DbSet<PipelineStep> PipelineSteps => Set<PipelineStep>();
@@ -45,6 +48,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
     public DbSet<Cluster> Clusters => Set<Cluster>();
     public DbSet<DeployWebhook> DeployWebhooks => Set<DeployWebhook>();
     public DbSet<ScheduledTask> ScheduledTasks => Set<ScheduledTask>();
+    public DbSet<Volume> Volumes => Set<Volume>();
+    public DbSet<PipelineRun> PipelineRuns => Set<PipelineRun>();
+    public DbSet<PipelineRunLog> PipelineRunLogs => Set<PipelineRunLog>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

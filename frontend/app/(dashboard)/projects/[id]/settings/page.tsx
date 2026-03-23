@@ -23,6 +23,7 @@ import { apiClient } from "@/lib/api-client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/hooks/use-api";
 import { toast } from "sonner";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 
 const schema = z.object({
   name: z.string().min(2).max(100).regex(/^[a-zA-Z0-9\s\-_.]+$/, "Name contains invalid characters"),
@@ -47,6 +48,7 @@ export default function ProjectSettingsPage() {
 
   const { data: project, isLoading } = useProject(id);
   const p = project as any;
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const deleteProject = useDeleteProject();
 
@@ -106,7 +108,6 @@ export default function ProjectSettingsPage() {
   }, [p?.id]); // eslint-disable-line
 
   const handleDelete = async () => {
-    if (!confirm(`Delete project "${p?.name}"? This cannot be undone.`)) return;
     try {
       await deleteProject.mutateAsync(id);
       toast.success("Project deleted.");
@@ -306,7 +307,7 @@ export default function ProjectSettingsPage() {
               variant="destructive"
               size="sm"
               className="h-8 gap-1.5 text-xs"
-              onClick={handleDelete}
+              onClick={() => setDeleteOpen(true)}
               disabled={deleteProject.isPending}
             >
               {deleteProject.isPending
@@ -317,6 +318,19 @@ export default function ProjectSettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <ConfirmActionDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete Project"
+        description={p?.name
+          ? `Delete project \"${p.name}\"? This action cannot be undone.`
+          : "Delete this project? This action cannot be undone."}
+        confirmLabel="Delete Project"
+        requireText={p?.name}
+        isConfirming={deleteProject.isPending}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }

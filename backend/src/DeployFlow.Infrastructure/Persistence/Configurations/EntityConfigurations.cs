@@ -54,6 +54,9 @@ public class ProjectConfiguration : IEntityTypeConfiguration<Project>
                     (c1, c2) => c1 != null && c2 != null && c1.SequenceEqual(c2),
                     c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v != null ? v.GetHashCode() : 0)),
                     c => c.ToList()));
+        b.Property(x => x.ActiveSlot).HasMaxLength(10).HasDefaultValue("blue");
+        b.Property(x => x.BlueContainerName).HasMaxLength(300).IsRequired(false);
+        b.Property(x => x.GreenContainerName).HasMaxLength(300).IsRequired(false);
         b.HasIndex(x => x.TenantId);
         b.HasIndex(x => new { x.TenantId, x.Slug }).IsUnique();
         b.HasIndex(x => new { x.TenantId, x.UpdatedAt });
@@ -67,6 +70,23 @@ public class ProjectTagConfiguration : IEntityTypeConfiguration<ProjectTag>
         b.ToTable("project_tags");
         b.HasKey(x => x.Id);
         b.Property(x => x.Name).HasMaxLength(100).IsRequired();
+    }
+}
+
+public class ServiceConfiguration : IEntityTypeConfiguration<Service>
+{
+    public void Configure(EntityTypeBuilder<Service> b)
+    {
+        b.ToTable("Services");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.MinReplicas).HasDefaultValue(1);
+        b.Property(x => x.MaxReplicas).HasDefaultValue(1);
+        b.Property(x => x.CpuTargetPercentage).IsRequired(false);
+        b.Property(x => x.MemoryTargetPercentage).IsRequired(false);
+        b.Property(x => x.LastScaledAt).IsRequired(false);
+        b.Property(x => x.LastScalingAction).HasMaxLength(50);
+        b.Property(x => x.LastScalingReason).HasMaxLength(1000);
+        b.HasIndex(x => x.ProjectId);
     }
 }
 
@@ -277,5 +297,98 @@ public class CostRecordConfiguration : IEntityTypeConfiguration<CostRecord>
         b.Property(x => x.Period).HasMaxLength(50);
         b.HasIndex(x => x.TenantId);
         b.HasIndex(x => new { x.TenantId, x.RecordedAt });
+    }
+}
+
+public class VolumeConfiguration : IEntityTypeConfiguration<Volume>
+{
+    public void Configure(EntityTypeBuilder<Volume> b)
+    {
+        b.ToTable("volumes");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Name).HasMaxLength(200).IsRequired();
+        b.Property(x => x.Driver).HasMaxLength(100).HasDefaultValue("local");
+        b.Property(x => x.MountPath).HasMaxLength(500);
+        b.Property(x => x.DockerName).HasMaxLength(300);
+        b.Property(x => x.Status).HasConversion<string>().HasMaxLength(50);
+        b.HasIndex(x => x.TenantId);
+        b.HasIndex(x => new { x.TenantId, x.Name });
+        b.HasIndex(x => x.ServerId);
+    }
+}
+
+public class PipelineRunConfiguration : IEntityTypeConfiguration<PipelineRun>
+{
+    public void Configure(EntityTypeBuilder<PipelineRun> b)
+    {
+        b.ToTable("pipeline_runs");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Status).HasConversion<string>().HasMaxLength(50);
+        b.Property(x => x.TriggeredBy).HasMaxLength(200);
+        b.Property(x => x.ErrorMessage).HasMaxLength(2000);
+        b.HasIndex(x => x.TenantId);
+        b.HasIndex(x => new { x.PipelineId, x.StartedAt });
+    }
+}
+
+public class PipelineRunLogConfiguration : IEntityTypeConfiguration<PipelineRunLog>
+{
+    public void Configure(EntityTypeBuilder<PipelineRunLog> b)
+    {
+        b.ToTable("pipeline_run_logs");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Level).HasMaxLength(20).IsRequired();
+        b.Property(x => x.StageName).HasMaxLength(120).IsRequired();
+        b.Property(x => x.StepName).HasMaxLength(120);
+        b.Property(x => x.Message).HasMaxLength(4000).IsRequired();
+        b.HasIndex(x => new { x.PipelineRunId, x.Sequence });
+    }
+}
+
+public class S3DestinationConfiguration : IEntityTypeConfiguration<S3Destination>
+{
+    public void Configure(EntityTypeBuilder<S3Destination> b)
+    {
+        b.ToTable("s3_destinations");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Name).HasMaxLength(200).IsRequired();
+        b.Property(x => x.Description).HasMaxLength(1000);
+        b.Property(x => x.Endpoint).HasMaxLength(500).IsRequired();
+        b.Property(x => x.BucketName).HasMaxLength(100).IsRequired();
+        b.Property(x => x.AccessKeyIdEncrypted).HasMaxLength(1000).IsRequired();
+        b.Property(x => x.SecretAccessKeyEncrypted).HasMaxLength(2000).IsRequired();
+        b.Property(x => x.Region).HasMaxLength(50);
+        b.Property(x => x.Status).HasConversion<string>().HasMaxLength(50);
+        b.HasIndex(x => x.TenantId);
+        b.HasIndex(x => new { x.TenantId, x.IsDefault });
+    }
+}
+
+public class BackupPolicyConfiguration : IEntityTypeConfiguration<BackupPolicy>
+{
+    public void Configure(EntityTypeBuilder<BackupPolicy> b)
+    {
+        b.ToTable("backup_policies");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.CronExpression).HasMaxLength(100).HasDefaultValue("0 2 * * *");
+        b.Property(x => x.StorageLocation).HasMaxLength(50).HasDefaultValue("local");
+        b.Property(x => x.ErrorMessage).HasMaxLength(1000);
+        b.HasIndex(x => new { x.TenantId, x.DatabaseInstanceId }).IsUnique();
+        b.HasIndex(x => x.S3DestinationId);
+    }
+}
+
+public class RestoreJobConfiguration : IEntityTypeConfiguration<RestoreJob>
+{
+    public void Configure(EntityTypeBuilder<RestoreJob> b)
+    {
+        b.ToTable("restore_jobs");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.TargetDatabaseName).HasMaxLength(200).IsRequired();
+        b.Property(x => x.Status).HasConversion<string>().HasMaxLength(50);
+        b.Property(x => x.ErrorMessage).HasMaxLength(2000);
+        b.HasIndex(x => x.TenantId);
+        b.HasIndex(x => new { x.TenantId, x.DatabaseInstanceId });
+        b.HasIndex(x => x.BackupId);
     }
 }

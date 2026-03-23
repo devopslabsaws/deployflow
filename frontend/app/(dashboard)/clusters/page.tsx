@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 
 interface ClusterNode {
   serverId: string;
@@ -73,6 +74,7 @@ export default function ClustersPage() {
   const [nodeServerId, setNodeServerId] = useState("");
   const [addingNode, setAddingNode] = useState(false);
   const [removingNode, setRemovingNode] = useState<string | null>(null);
+  const [removeNodeTarget, setRemoveNodeTarget] = useState<{ clusterId: string; serverId: string; name: string } | null>(null);
 
   const [previewClusterId, setPreviewClusterId] = useState<string | null>(null);
   const [nextNode, setNextNode] = useState<ClusterNode | null>(null);
@@ -141,14 +143,14 @@ export default function ClustersPage() {
     }
   };
 
-  const handleRemoveNode = async (clusterId: string, serverId: string) => {
-    if (!confirm("Remove this node from the cluster?")) return;
-    setRemovingNode(serverId);
+  const handleRemoveNode = async () => {
+    if (!removeNodeTarget) return;
+    setRemovingNode(removeNodeTarget.serverId);
     try {
-      await apiClient.delete(`/clusters/${clusterId}/nodes/${serverId}`);
+      await apiClient.delete(`/clusters/${removeNodeTarget.clusterId}/nodes/${removeNodeTarget.serverId}`);
       setClusters(cs =>
-        cs.map(c => c.id === clusterId
-          ? { ...c, nodeCount: Math.max(0, c.nodeCount - 1), nodes: c.nodes?.filter(n => n.serverId !== serverId) }
+        cs.map(c => c.id === removeNodeTarget.clusterId
+          ? { ...c, nodeCount: Math.max(0, c.nodeCount - 1), nodes: c.nodes?.filter(n => n.serverId !== removeNodeTarget.serverId) }
           : c
         )
       );
@@ -302,7 +304,7 @@ export default function ClustersPage() {
                               variant="ghost"
                               className="h-6 w-6 text-destructive hover:text-destructive"
                               disabled={removingNode === node.serverId}
-                              onClick={() => handleRemoveNode(cluster.id, node.serverId)}
+                              onClick={() => setRemoveNodeTarget({ clusterId: cluster.id, serverId: node.serverId, name: node.name })}
                             >
                               {removingNode === node.serverId
                                 ? <Loader2 className="w-3 h-3 animate-spin" />
@@ -402,6 +404,18 @@ export default function ClustersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmActionDialog
+        open={!!removeNodeTarget}
+        onOpenChange={(open) => { if (!open) setRemoveNodeTarget(null); }}
+        title="Remove Cluster Node"
+        description={removeNodeTarget
+          ? `Remove node \"${removeNodeTarget.name}\" from this cluster?`
+          : "Remove this node from the cluster?"}
+        confirmLabel="Remove Node"
+        isConfirming={Boolean(removingNode)}
+        onConfirm={handleRemoveNode}
+      />
     </div>
   );
 }

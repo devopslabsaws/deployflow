@@ -68,6 +68,12 @@ public interface IDatabaseRepository : ITenantRepository<DatabaseInstance>
     Task<IReadOnlyList<DatabaseInstance>> GetByServerAsync(Guid serverId, CancellationToken ct = default);
 }
 
+public interface IDatabaseBackupRepository : IRepository<DatabaseBackup>
+{
+    Task<IReadOnlyList<DatabaseBackup>> GetByDatabaseAsync(Guid databaseId, CancellationToken ct = default);
+    Task<DatabaseBackup?> GetLatestCompletedAsync(Guid databaseId, CancellationToken ct = default);
+}
+
 public interface IPipelineRepository : ITenantRepository<Pipeline>
 {
     Task<IReadOnlyList<Pipeline>> GetByProjectAsync(Guid projectId, CancellationToken ct = default);

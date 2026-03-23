@@ -21,6 +21,7 @@ import { useProject } from "@/hooks/use-api";
 import { apiClient } from "@/lib/api-client";
 import { formatRelativeTime } from "@/lib/utils";
 import { toast } from "sonner";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 
 interface ScheduledTask {
   id: string;
@@ -151,6 +152,7 @@ export default function ScheduledTasksPage() {
   const [loading, setLoading] = useState(true);
   const [runningId, setRunningId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [creating, setCreating] = useState(false);
 
@@ -184,7 +186,6 @@ export default function ScheduledTasksPage() {
   };
 
   const handleDelete = async (taskId: string) => {
-    if (!confirm("Delete this scheduled task?")) return;
     try {
       await apiClient.delete(`/projects/${id}/scheduled-tasks/${taskId}`);
       toast.success("Task deleted.");
@@ -192,6 +193,11 @@ export default function ScheduledTasksPage() {
     } catch (e: any) {
       toast.error("Failed to delete", { description: e.message });
     }
+  };
+
+  const confirmDeleteTask = async () => {
+    if (!deleteTaskId) return;
+    await handleDelete(deleteTaskId);
   };
 
   const handleToggle = async (taskId: string, active: boolean) => {
@@ -277,7 +283,7 @@ export default function ScheduledTasksPage() {
                 task={task}
                 running={runningId === task.id}
                 onRun={handleRun}
-                onDelete={handleDelete}
+                onDelete={setDeleteTaskId}
                 onToggle={handleToggle}
               />
             ))
@@ -360,6 +366,15 @@ export default function ScheduledTasksPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmActionDialog
+        open={!!deleteTaskId}
+        onOpenChange={(open) => { if (!open) setDeleteTaskId(null); }}
+        title="Delete Scheduled Task"
+        description="Delete this scheduled task? This cannot be undone."
+        confirmLabel="Delete Task"
+        onConfirm={confirmDeleteTask}
+      />
     </div>
   );
 }

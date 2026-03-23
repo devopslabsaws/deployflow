@@ -48,6 +48,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IDeploymentRepository, DeploymentRepository>();
         services.AddScoped<IServerRepository, ServerRepository>();
         services.AddScoped<IDatabaseRepository, Persistence.Repositories.DatabaseRepository>();
+        services.AddScoped<IDatabaseBackupRepository, Persistence.Repositories.DatabaseBackupRepository>();
+        services.AddScoped<ITenantRepository<S3Destination>>(sp =>
+            new TenantRepository<S3Destination>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<BackupPolicy>>(sp =>
+            new TenantRepository<BackupPolicy>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<RestoreJob>>(sp =>
+            new TenantRepository<RestoreJob>(sp.GetRequiredService<ApplicationDbContext>()));
         services.AddScoped<IPipelineRepository, Persistence.Repositories.PipelineRepository>();
         services.AddScoped<IAuditLogRepository, AuditLogRepository>();
         services.AddScoped<IAlertRepository, AlertRepository>();
@@ -79,6 +86,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPermissionService, PermissionService>();
         services.AddScoped<BlueGreenDeploymentService>();
         services.AddScoped<ClusterService>();
+        services.AddSingleton<IDatabaseRestoreJobService, DatabaseRestoreJobService>();
+        services.AddScoped<IS3DestinationValidationService, S3DestinationValidationService>();
         services.AddHttpClient("notifications");
 
         // Background services

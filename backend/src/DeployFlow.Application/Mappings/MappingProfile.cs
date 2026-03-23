@@ -220,5 +220,54 @@ public class MappingProfile : Profile
                 s.CreatedAt,
                 s.UpdatedAt))
             .ForAllMembers(o => o.Ignore());
+
+        // ── S3Destination ────────────────────────────────────────────────────
+        CreateMap<S3Destination, S3DestinationDto>()
+            .ConstructUsing(s => new S3DestinationDto(
+                s.Id,
+                s.Name,
+                s.Description,
+                s.Endpoint,
+                s.BucketName,
+                s.Region,
+                s.IsDefault,
+                s.Status.ToString(),
+                s.LastTestedAt,
+                s.CreatedAt,
+                s.UpdatedAt))
+            .ForAllMembers(o => o.Ignore());
+
+        // ── BackupPolicy ──────────────────────────────────────────────────────
+        CreateMap<BackupPolicy, BackupPolicyDto>()
+            .ConstructUsing(s => new BackupPolicyDto(
+                s.Id,
+                s.DatabaseInstanceId,
+                s.IsEnabled,
+                s.CronExpression,
+                s.RetentionDays,
+                s.S3DestinationId,
+                s.StorageLocation,
+                s.LastRunAt,
+                s.NextRunAt,
+                s.ErrorMessage,
+                s.CreatedAt,
+                s.UpdatedAt))
+            .ForAllMembers(o => o.Ignore());
+
+        // ── RestoreJob ────────────────────────────────────────────────────────
+        CreateMap<RestoreJob, RestoreJobDto>()
+            .ConstructUsing(s => new RestoreJobDto(
+                s.Id,
+                s.DatabaseInstanceId,
+                s.BackupId,
+                s.TargetDatabaseName,
+                s.Status.ToString(),
+                s.StartedAt,
+                s.CompletedAt,
+                s.ErrorMessage,
+                s.ProgressPercent,
+                s.CreatedAt,
+                s.UpdatedAt))
+            .ForAllMembers(o => o.Ignore());
     }
 }

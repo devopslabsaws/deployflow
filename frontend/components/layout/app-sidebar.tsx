@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, FolderOpen, Rocket, Server, ScrollText, GitBranch,
   Database, Activity, Settings, Bot, ChevronLeft, ChevronRight,
-  Users, Shield, Bell, DollarSign, Globe, HardDrive, Layers, Zap, Package, Network,
+  Users, Shield, Bell, DollarSign, Globe, HardDrive, Layers, Zap, Package, Network, Cloud,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -46,9 +46,10 @@ const navGroups: NavGroup[] = [
       { label: "Servers",    href: "/servers",    icon: Server },
       { label: "Clusters",   href: "/clusters",   icon: Network },
       { label: "Containers", href: "/containers", icon: Layers },
-      { label: "Databases",  href: "/databases",  icon: Database },
-      { label: "Domains",    href: "/domains",    icon: Globe },
-      { label: "Volumes",    href: "/volumes",    icon: HardDrive },
+      { label: "Databases",       href: "/databases",       icon: Database },
+      { label: "S3 Destinations", href: "/s3-destinations", icon: Cloud },
+      { label: "Domains",         href: "/domains",         icon: Globe },
+      { label: "Volumes",         href: "/volumes",         icon: HardDrive },
     ],
   },
   {

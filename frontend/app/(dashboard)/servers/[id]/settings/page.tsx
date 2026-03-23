@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useServer, useSshKeys } from "@/hooks/use-api";
 import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 
 export default function ServerSettingsPage({ params }: { params: { id: string } }) {
   const { id } = params;
@@ -36,6 +37,7 @@ export default function ServerSettingsPage({ params }: { params: { id: string } 
   const [diskGb, setDiskGb]       = useState("");
   const [saving, setSaving]       = useState(false);
   const [removing, setRemoving]   = useState(false);
+  const [removeOpen, setRemoveOpen] = useState(false);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   // Docker Cleanup state
   const [cleanupFreq, setCleanupFreq]         = useState("0 0 * * *");
@@ -150,7 +152,6 @@ export default function ServerSettingsPage({ params }: { params: { id: string } 
   };
 
   const handleRemove = async () => {
-    if (!confirm(`Remove server "${server?.name}"? This cannot be undone. Active deployments will be affected.`)) return;
     setRemoving(true);
     try {
       await apiClient.delete(`/servers/${id}`);
@@ -336,7 +337,7 @@ export default function ServerSettingsPage({ params }: { params: { id: string } 
                   variant="destructive"
                   size="sm"
                   disabled={removing}
-                  onClick={handleRemove}
+                  onClick={() => setRemoveOpen(true)}
                 >
                   {removing
                     ? <Loader2 className="w-4 h-4 animate-spin mr-2" />
@@ -505,6 +506,19 @@ export default function ServerSettingsPage({ params }: { params: { id: string } 
           </Card>
         </TabsContent>
       </Tabs>
+
+      <ConfirmActionDialog
+        open={removeOpen}
+        onOpenChange={setRemoveOpen}
+        title="Remove Server"
+        description={server?.name
+          ? `Remove server \"${server.name}\"? This cannot be undone and active deployments may be affected.`
+          : "Remove this server? This cannot be undone."}
+        confirmLabel="Remove Server"
+        requireText={server?.name}
+        isConfirming={removing}
+        onConfirm={handleRemove}
+      />
     </div>
   );
 }

@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { useProject } from "@/hooks/use-api";
 import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 
 interface WebhookConfig {
   token: string;
@@ -84,6 +85,7 @@ export default function ProjectWebhooksPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [regenerateOpen, setRegenerateOpen] = useState(false);
 
   const [ghSecret, setGhSecret] = useState("");
   const [glSecret, setGlSecret] = useState("");
@@ -126,7 +128,6 @@ export default function ProjectWebhooksPage() {
   };
 
   const handleRegenerate = async () => {
-    if (!confirm("Regenerate deploy token? All existing webhook URLs will change.")) return;
     setRegenerating(true);
     try {
       const updated: any = await apiClient.post(`/projects/${id}/webhooks/regenerate`, {});
@@ -179,7 +180,7 @@ export default function ProjectWebhooksPage() {
               <Label className="text-xs text-muted-foreground">Active</Label>
               <Switch checked={isActive} onCheckedChange={setIsActive} />
             </div>
-            <Button size="sm" variant="outline" disabled={regenerating} onClick={handleRegenerate}>
+            <Button size="sm" variant="outline" disabled={regenerating} onClick={() => setRegenerateOpen(true)}>
               {regenerating
                 ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
                 : <RefreshCw className="w-3.5 h-3.5 mr-1.5" />}
@@ -272,6 +273,17 @@ export default function ProjectWebhooksPage() {
           </div>
         </CardContent>
       </Card>
+
+      <ConfirmActionDialog
+        open={regenerateOpen}
+        onOpenChange={setRegenerateOpen}
+        title="Regenerate Webhook Token"
+        description="Regenerate deploy token? All existing webhook URLs will change."
+        confirmLabel="Regenerate"
+        confirmVariant="default"
+        isConfirming={regenerating}
+        onConfirm={handleRegenerate}
+      />
     </div>
   );
 }

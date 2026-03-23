@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.7" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -24,8 +25,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\DeployFlow.API\DeployFlow.API.csproj" />
     <ProjectReference Include="..\..\src\DeployFlow.Application\DeployFlow.Application.csproj" />
     <ProjectReference Include="..\..\src\DeployFlow.Domain\DeployFlow.Domain.csproj" />
+    <ProjectReference Include="..\..\src\DeployFlow.Infrastructure\DeployFlow.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

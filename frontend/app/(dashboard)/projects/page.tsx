@@ -25,11 +25,13 @@ import { toast } from "sonner";
 import Link from "next/link";
 import type { Project } from "@/types";
 import { CreateProjectDialog } from "@/components/projects/create-project-dialog";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 
 export default function ProjectsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [createOpen, setCreateOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   const { data, isLoading, refetch } = useProjects({
     search: search || undefined,
@@ -47,11 +49,11 @@ export default function ProjectsPage() {
   const totalDeploys = projects.reduce((sum, p) => sum + p.deploymentCount, 0);
   const recentlyDeployed = projects.filter((p) => p.lastDeployedAt).length;
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Delete project "${name}"? This action cannot be undone.`)) return;
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
     try {
-      await deleteProject.mutateAsync(id);
-      toast.success(`Project "${name}" deleted.`);
+      await deleteProject.mutateAsync(deleteTarget.id);
+      toast.success(`Project "${deleteTarget.name}" deleted.`);
     } catch (e: any) {
       toast.error("Failed to delete project", { description: e.message });
     }
@@ -171,12 +173,25 @@ export default function ProjectsPage() {
               key={project.id}
               project={project}
               index={i}
-              onDelete={() => handleDelete(project.id, project.name)}
+              onDelete={() => setDeleteTarget({ id: project.id, name: project.name })}
               onDeploy={() => handleDeploy(project)}
             />
           ))}
         </div>
       )}
+
+      <ConfirmActionDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title="Delete Project"
+        description={deleteTarget
+          ? `This permanently deletes project \"${deleteTarget.name}\" and cannot be undone.`
+          : "This action cannot be undone."}
+        confirmLabel="Delete Project"
+        requireText={deleteTarget?.name}
+        isConfirming={deleteProject.isPending}
+        onConfirm={handleDelete}
+      />
 
       <CreateProjectDialog open={createOpen} onOpenChange={setCreateOpen} />
     </div>

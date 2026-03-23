@@ -135,6 +135,7 @@ public class DatabaseBackup : BaseEntity
     public string? ErrorMessage { get; set; }
     public bool IsAutomatic { get; set; }
     public bool IsManual => !IsAutomatic;
+    public Guid? S3DestinationId { get; set; }
     public DatabaseInstance DatabaseInstance { get; set; } = default!;
 }
 
@@ -165,3 +166,53 @@ public class PreviewEnvironment : TenantEntity
     public DateTime? MergedAt { get; set; }
     public DateTime? ClosedAt { get; set; }
 }
+
+// ─── S3 Destination ───────────────────────────────────────────────────────────
+
+public class S3Destination : TenantEntity
+{
+    public string Name { get; set; } = default!;
+    public string? Description { get; set; }
+    public string Endpoint { get; set; } = default!;
+    public string BucketName { get; set; } = default!;
+    public string AccessKeyIdEncrypted { get; set; } = default!;
+    public string SecretAccessKeyEncrypted { get; set; } = default!;
+    public string? Region { get; set; }
+    public bool IsDefault { get; set; } = false;
+    public S3DestinationStatus Status { get; set; } = S3DestinationStatus.Unconfigured;
+    public DateTime? LastTestedAt { get; set; }
+}
+
+public enum S3DestinationStatus { Unconfigured, Active, Error }
+
+// ─── Backup Policy ────────────────────────────────────────────────────────────
+
+public class BackupPolicy : TenantEntity
+{
+    public Guid DatabaseInstanceId { get; set; }
+    public bool IsEnabled { get; set; } = true;
+    public string CronExpression { get; set; } = "0 2 * * *"; // Default: daily at 2 AM
+    public int RetentionDays { get; set; } = 7;
+    public Guid? S3DestinationId { get; set; }
+    public string StorageLocation { get; set; } = "local"; // "local" or "s3"
+    public DateTime? LastRunAt { get; set; }
+    public DateTime? NextRunAt { get; set; }
+    public string? ErrorMessage { get; set; }
+}
+
+// ─── Restore Job ──────────────────────────────────────────────────────────────
+
+public class RestoreJob : TenantEntity
+{
+    public Guid DatabaseInstanceId { get; set; }
+    public Guid BackupId { get; set; }
+    public string TargetDatabaseName { get; set; } = default!;
+    public RestoreJobStatus Status { get; set; } = RestoreJobStatus.Pending;
+    public DateTime? StartedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public string? ErrorMessage { get; set; }
+    public float? ProgressPercent { get; set; }
+}
+
+public enum RestoreJobStatus { Pending, Running, Success, Failed, Cancelled }
+

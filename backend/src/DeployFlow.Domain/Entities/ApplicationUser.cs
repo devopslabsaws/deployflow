@@ -245,3 +245,28 @@ public class PipelineStep : BaseEntity
 }
 
 public enum PipelineStatus { Idle, Running, Success, Failed, Cancelled }
+
+public enum PipelineRunStatus { Queued, Running, Success, Failed, Cancelled }
+
+public class PipelineRun : TenantEntity
+{
+    public Guid PipelineId { get; set; }
+    public PipelineRunStatus Status { get; set; } = PipelineRunStatus.Queued;
+    public DateTime StartedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? CompletedAt { get; set; }
+    public int StageCount { get; set; }
+    public int StepCount { get; set; }
+    public string? TriggeredBy { get; set; }
+    public string? ErrorMessage { get; set; }
+}
+
+public class PipelineRunLog : BaseEntity
+{
+    public Guid PipelineRunId { get; set; }
+    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+    public string Level { get; set; } = "info";
+    public string StageName { get; set; } = "pipeline";
+    public string? StepName { get; set; }
+    public string Message { get; set; } = default!;
+    public int Sequence { get; set; }
+}

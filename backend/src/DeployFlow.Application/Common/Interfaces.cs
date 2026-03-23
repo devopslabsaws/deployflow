@@ -70,6 +70,8 @@ public interface IDockerService
 {
     Task<bool> PullImageAsync(string serverId, string image, string tag = "latest", CancellationToken ct = default);
     Task<string> RunContainerAsync(string serverId, ContainerConfig config, CancellationToken ct = default);
+    Task StartContainerAsync(string serverId, string containerId, CancellationToken ct = default);
+    Task RestartContainerAsync(string serverId, string containerId, CancellationToken ct = default);
     Task StopContainerAsync(string serverId, string containerId, CancellationToken ct = default);
     Task RemoveContainerAsync(string serverId, string containerId, CancellationToken ct = default);
     Task<ContainerStats> GetContainerStatsAsync(string serverId, string containerId, CancellationToken ct = default);
@@ -154,4 +156,27 @@ public interface IPermissionService
         DeployFlow.Domain.Entities.PermissionResource resourceType,
         Guid resourceId,
         CancellationToken ct = default);
+}
+
+public interface IS3DestinationValidationService
+{
+    Task<S3DestinationTestResult> TestConnectionAsync(
+        S3DestinationTestRequest request,
+        CancellationToken ct = default);
+}
+
+public interface IDatabaseRestoreJobService
+{
+    Task<DatabaseRestoreJobDto> StartAsync(
+        Guid databaseId,
+        Guid backupId,
+        string targetDatabaseName,
+        CancellationToken ct = default);
+
+    Task<DatabaseRestoreJobDto?> GetAsync(
+        Guid databaseId,
+        Guid jobId,
+        CancellationToken ct = default);
+
+    Task<bool> HasActiveRestoreAsync(Guid databaseId, CancellationToken ct = default);
 }

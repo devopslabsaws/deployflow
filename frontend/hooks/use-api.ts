@@ -21,6 +21,10 @@ import type {
   SshKey,
   TeamMember,
   CostRecord,
+  S3Destination,
+  BackupPolicy,
+  RestoreJob,
+  ServiceScalingPolicy,
 } from "@/types";
 
 // ─── Local Types ──────────────────────────────────────────────────────────────
@@ -47,6 +51,87 @@ export interface Volume {
   sizeBytes: number;
   projectId?: string;
   createdAt: string;
+}
+
+export interface LogLine {
+  id: string;
+  timestamp: string;
+  level: "info" | "warn" | "error" | "debug";
+  message: string;
+  service: string;
+}
+
+export interface LogsResponse {
+  items: LogLine[];
+  nextCursor: number | null;
+  hasMore: boolean;
+}
+
+export interface MonitoringSummary {
+  avgCpu: number;
+  avgMemory: number;
+  avgDisk: number;
+  avgNetworkInMbps: number;
+  avgNetworkOutMbps: number;
+  sampleCount: number;
+}
+
+export interface MonitoringPoint {
+  timestamp: string;
+  value: number;
+}
+
+export interface MonitoringNetworkPoint {
+  timestamp: string;
+  inbound: number;
+  outbound: number;
+}
+
+export interface PipelineRun {
+  id: string;
+  pipelineId: string;
+  status: "queued" | "running" | "success" | "failed" | "cancelled";
+  startedAt: string;
+  completedAt?: string | null;
+  stageCount: number;
+  stepCount: number;
+  triggeredBy?: string | null;
+  errorMessage?: string | null;
+}
+
+export interface PipelineRunLog {
+  id: string;
+  timestamp: string;
+  level: string;
+  stageName: string;
+  stepName?: string | null;
+  message: string;
+  sequence: number;
+}
+
+function normalizeService(dto: any): Service {
+  return {
+    ...dto,
+    status: dto.status?.toLowerCase() as Service["status"],
+    type: dto.type?.toLowerCase() as Service["type"],
+    ports: dto.ports ?? [],
+    envVars: dto.envVars ?? [],
+    volumes: dto.volumes ?? [],
+    resources: {
+      cpuLimit: dto.resources?.cpuLimit ?? dto.cpuLimit ?? undefined,
+      memoryLimit: dto.resources?.memoryLimit ?? dto.memoryLimit ?? undefined,
+      cpuRequest: dto.resources?.cpuRequest ?? dto.cpuRequest ?? undefined,
+      memoryRequest: dto.resources?.memoryRequest ?? dto.memoryRequest ?? undefined,
+    },
+    replicas: dto.replicas ?? 1,
+    minReplicas: dto.minReplicas ?? dto.replicas ?? 1,
+    maxReplicas: dto.maxReplicas ?? dto.replicas ?? 1,
+    cpuTargetPercentage: dto.cpuTargetPercentage ?? undefined,
+    memoryTargetPercentage: dto.memoryTargetPercentage ?? undefined,
+    lastScalingAction: dto.lastScalingAction ?? undefined,
+    lastScalingReason: dto.lastScalingReason ?? undefined,
+    lastScaledAt: dto.lastScaledAt ?? undefined,
+  } as Service;
 }
 
 // ─── Query Keys ───────────────────────────────────────────────────────────────
@@ -83,6 +168,11 @@ export const queryKeys = {
     all: ["pipelines"] as const,
     list: (projectId?: string) => ["pipelines", "list", projectId] as const,
     detail: (id: string) => ["pipelines", "detail", id] as const,
+    runs: (pipelineId: string) => ["pipelines", "runs", pipelineId] as const,
+  },
+  pipelineRuns: {
+    detail: (runId: string) => ["pipeline-runs", "detail", runId] as const,
+    logs: (runId: string, page: number, pageSize: number) => ["pipeline-runs", "logs", runId, page, pageSize] as const,
   },
   alerts: {
     all: ["alerts"] as const,
@@ -421,8 +511,18 @@ export function useServerContainers(serverId: string, enabled = true) {
 export function useServices(projectId?: string) {
   return useQuery({
     queryKey: queryKeys.services.list(projectId),
-    queryFn: () =>
-      apiClient.get<Service[]>("/services", { params: projectId ? { projectId } : {} }),
+    queryFn: async () => {
+      const result = await apiClient.get<any[]>("/services", { params: projectId ? { projectId } : {} });
+      return (result ?? []).map(normalizeService);
+    },
+  });
+}
+
+export function useService(id: string) {
+  return useQuery({
+    queryKey: queryKeys.services.detail(id),
+    queryFn: async () => normalizeService(await apiClient.get<any>(`/services/${id}`)),
+    enabled: !!id,
   });
 }
 
@@ -464,6 +564,37 @@ export function useRestartService() {
   return useMutation({
     mutationFn: (id: string) => apiClient.post(`/services/${id}/restart`, {}),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.services.all }),
+  });
+}
+
+export function useServiceScalingPolicy(id: string) {
+  return useQuery({
+    queryKey: ["services", "scaling-policy", id],
+    queryFn: () => apiClient.get<ServiceScalingPolicy>(`/services/${id}/scaling-policy`),
+    enabled: !!id,
+  });
+}
+
+export function useUpdateServiceScalingPolicy() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...data
+    }: {
+      id: string;
+      minReplicas: number;
+      maxReplicas: number;
+      cpuTargetPercentage?: number;
+      memoryTargetPercentage?: number;
+      triggerReason?: string;
+      lastScalingAction?: string;
+    }) => apiClient.put<ServiceScalingPolicy>(`/services/${id}/scaling-policy`, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.services.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.services.detail(variables.id) });
+      queryClient.invalidateQueries({ queryKey: ["services", "scaling-policy", variables.id] });
+    },
   });
 }
 
@@ -511,7 +642,36 @@ export function useTriggerBackup() {
   });
 }
 
+export function useDeleteDatabase() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/databases/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.databases.all }),
+  });
+}
+
 // ─── Pipelines ────────────────────────────────────────────────────────────────
+
+function normalizePipeline(dto: any): Pipeline {
+  const triggerRaw = (dto.trigger ?? "manual") as string;
+  const triggerType = triggerRaw.toLowerCase() as Pipeline["trigger"]["type"];
+
+  return {
+    ...dto,
+    status: dto.status?.toLowerCase() as Pipeline["status"],
+    trigger: {
+      type: (triggerType === "pullrequest" ? "pr" : triggerType) as Pipeline["trigger"]["type"],
+      schedule: dto.cronExpression ?? undefined,
+    },
+    stages: (dto.stages ?? []).map((s: any) => ({
+      ...s,
+      steps: s.steps ?? [],
+      runParallel: s.runParallel ?? false,
+    })),
+    lastRunDuration: typeof dto.lastDuration === "number" ? dto.lastDuration : undefined,
+    isEnabled: dto.isEnabled ?? true,
+  } as Pipeline;
+}
 
 export function usePipelines(projectId?: string) {
   return useQuery({
@@ -519,15 +679,7 @@ export function usePipelines(projectId?: string) {
     queryFn: async () => {
       const result = await apiClient.get<any>("/pipelines", { params: projectId ? { projectId } : {} });
       const items: any[] = Array.isArray(result) ? result : ((result as any).data ?? []);
-      return items.map((p: any): Pipeline => ({
-        ...p,
-        status: p.status?.toLowerCase() as Pipeline["status"],
-        trigger: {
-          ...p.trigger,
-          type: p.trigger?.type?.toLowerCase() as Pipeline["trigger"]["type"],
-        },
-        stages: p.stages ?? [],
-      }));
+      return items.map(normalizePipeline);
     },
     staleTime: 60_000,
   });
@@ -536,7 +688,7 @@ export function usePipelines(projectId?: string) {
 export function usePipeline(id: string) {
   return useQuery({
     queryKey: queryKeys.pipelines.detail(id),
-    queryFn: () => apiClient.get<Pipeline>(`/pipelines/${id}`),
+    queryFn: async () => normalizePipeline(await apiClient.get<any>(`/pipelines/${id}`)),
     enabled: !!id,
     staleTime: 60_000,
   });
@@ -547,6 +699,83 @@ export function useTriggerPipeline() {
   return useMutation({
     mutationFn: (id: string) => apiClient.post(`/pipelines/${id}/trigger`, {}),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.all }),
+  });
+}
+
+export function useUpdatePipeline() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string; name: string; description?: string; trigger: string; cronExpression?: string; isEnabled: boolean }) =>
+      apiClient.put(`/pipelines/${id}`, data),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.detail(vars.id) });
+    },
+  });
+}
+
+export function useStartPipelineRun() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (pipelineId: string) => apiClient.post<PipelineRun>(`/pipelines/${pipelineId}/runs`, {}),
+    onSuccess: (run) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.all });
+      if (run?.pipelineId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.runs(run.pipelineId) });
+      }
+    },
+  });
+}
+
+export function usePipelineRuns(pipelineId: string) {
+  return useQuery({
+    queryKey: queryKeys.pipelines.runs(pipelineId),
+    queryFn: () => apiClient.get<PipelineRun[]>(`/pipelines/${pipelineId}/runs`),
+    enabled: !!pipelineId,
+    staleTime: 10_000,
+    refetchInterval: MOCK ? false : 10000,
+  });
+}
+
+export function usePipelineRun(runId: string) {
+  return useQuery({
+    queryKey: queryKeys.pipelineRuns.detail(runId),
+    queryFn: () => apiClient.get<PipelineRun>(`/pipeline-runs/${runId}`),
+    enabled: !!runId,
+    staleTime: 10_000,
+    refetchInterval: MOCK ? false : 10000,
+  });
+}
+
+export function usePipelineRunLogs(runId: string, page = 1, pageSize = 200) {
+  return useQuery({
+    queryKey: queryKeys.pipelineRuns.logs(runId, page, pageSize),
+    queryFn: async () => {
+      const res = await apiClient.get<any>(`/pipeline-runs/${runId}/logs`, { params: { page, pageSize } });
+      return {
+        data: (res?.data ?? []) as PipelineRunLog[],
+        total: res?.total ?? 0,
+        page: res?.page ?? page,
+        pageSize: res?.pageSize ?? pageSize,
+        totalPages: res?.totalPages ?? 1,
+      };
+    },
+    enabled: !!runId,
+    staleTime: 5_000,
+    refetchInterval: MOCK ? false : 5000,
+  });
+}
+
+export function useCancelPipelineRun() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (runId: string) => apiClient.post<PipelineRun>(`/pipeline-runs/${runId}/cancel`, {}),
+    onSuccess: (run) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.pipelineRuns.detail(run.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pipelineRuns.logs(run.id, 1, 200) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.runs(run.pipelineId) });
+    },
   });
 }
 
@@ -943,6 +1172,65 @@ export function useDeleteVolume() {
   });
 }
 
+export function useAttachVolume() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { id: string; projectId?: string; serviceId?: string; mountPath?: string }) =>
+      apiClient.post(`/volumes/${data.id}/attach`, {
+        projectId: data.projectId,
+        serviceId: data.serviceId,
+        mountPath: data.mountPath,
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["volumes"] }),
+  });
+}
+
+export function useDetachVolume() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.post(`/volumes/${id}/detach`, {}),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["volumes"] }),
+  });
+}
+
+export function useLogs(params?: {
+  level?: string;
+  service?: string;
+  search?: string;
+  cursor?: number;
+  pageSize?: number;
+}) {
+  return useQuery({
+    queryKey: ["logs", params],
+    queryFn: () => apiClient.get<LogsResponse>("/logs", { params }),
+    staleTime: 5_000,
+  });
+}
+
+export function useMonitoringSummary(serverId?: string, range: string = "1h") {
+  return useQuery({
+    queryKey: ["monitoring", "summary", serverId, range],
+    queryFn: () => apiClient.get<MonitoringSummary>("/monitoring/summary", { params: { serverId, range } }),
+    staleTime: 10_000,
+  });
+}
+
+export function useMonitoringTimeSeries(metric: string, serverId?: string, range: string = "1h") {
+  return useQuery({
+    queryKey: ["monitoring", "timeseries", metric, serverId, range],
+    queryFn: () => apiClient.get<MonitoringPoint[]>("/monitoring/timeseries", { params: { metric, serverId, range } }),
+    staleTime: 10_000,
+  });
+}
+
+export function useMonitoringNetwork(serverId?: string, range: string = "1h") {
+  return useQuery({
+    queryKey: ["monitoring", "network", serverId, range],
+    queryFn: () => apiClient.get<MonitoringNetworkPoint[]>("/monitoring/network", { params: { serverId, range } }),
+    staleTime: 10_000,
+  });
+}
+
 // ─── Integrations ──────────────────────────────────────────────────────────────
 
 export interface IntegrationStatus {
@@ -1065,5 +1353,214 @@ export function useDeleteApiKey() {
   return useMutation({
     mutationFn: (id: string) => apiClient.delete(`/api-keys/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["api-keys"] }),
+  });
+}
+
+// ─── S3 Destinations ──────────────────────────────────────────────────────────
+
+export function useS3Destinations() {
+  return useQuery({
+    queryKey: ["s3-destinations"],
+    queryFn: () => apiClient.get<S3Destination[]>("/databases/s3-destinations"),
+  });
+}
+
+export function useS3Destination(id: string) {
+  return useQuery({
+    queryKey: ["s3-destinations", id],
+    queryFn: () => apiClient.get<S3Destination>(`/databases/s3-destinations/${id}`),
+    enabled: !!id,
+  });
+}
+
+export function useCreateS3Destination() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      name: string;
+      description?: string;
+      endpoint: string;
+      bucketName: string;
+      region?: string;
+      accessKeyId: string;
+      secretAccessKey: string;
+      isDefault: boolean;
+    }) => apiClient.post<S3Destination>("/databases/s3-destinations", data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["s3-destinations"] }),
+  });
+}
+
+export function useUpdateS3Destination() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      id: string;
+      name: string;
+      description?: string;
+      endpoint: string;
+      bucketName: string;
+      region?: string;
+      accessKeyId?: string;
+      secretAccessKey?: string;
+      isDefault: boolean;
+    }) =>
+      apiClient.put<S3Destination>(
+        `/databases/s3-destinations/${data.id}`,
+        data
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["s3-destinations"] });
+    },
+  });
+}
+
+export function useDeleteS3Destination() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiClient.delete<void>(`/databases/s3-destinations/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["s3-destinations"] }),
+  });
+}
+
+export function useTestS3Destination() {
+  return useMutation({
+    mutationFn: (data: {
+      endpoint: string;
+      bucketName: string;
+      region?: string;
+      accessKeyId: string;
+      secretAccessKey: string;
+    }) =>
+      apiClient.post<{ isConnected: boolean; message: string }>(
+        "/databases/s3-destinations/test",
+        data
+      ),
+  });
+}
+
+// ─── Backup Policy ────────────────────────────────────────────────────────────
+
+export function useBackupPolicy(databaseId: string) {
+  return useQuery({
+    queryKey: ["backup-policy", databaseId],
+    queryFn: () =>
+      apiClient.get<BackupPolicy>(`/databases/${databaseId}/backup-policy`),
+    enabled: !!databaseId,
+  });
+}
+
+export function useUpdateBackupPolicy() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      databaseId: string;
+      isEnabled: boolean;
+      cronExpression: string;
+      retentionDays: number;
+      s3DestinationId?: string;
+      storageLocation: "local" | "s3";
+    }) =>
+      apiClient.put<BackupPolicy>(
+        `/databases/${data.databaseId}/backup-policy`,
+        data
+      ),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["backup-policy", variables.databaseId] });
+    },
+  });
+}
+
+// ─── Restore Jobs ────────────────────────────────────────────────────────────
+
+export function useRestoreJobs(databaseId: string) {
+  return useQuery({
+    queryKey: ["restore-jobs", databaseId],
+    queryFn: () =>
+      apiClient.get<RestoreJob[]>(`/databases/${databaseId}/restore/jobs`),
+    enabled: !!databaseId,
+  });
+}
+
+export function useRestoreJob(databaseId: string, jobId: string) {
+  return useQuery({
+    queryKey: ["restore-jobs", databaseId, jobId],
+    queryFn: () =>
+      apiClient.get<RestoreJob>(`/databases/${databaseId}/restore/jobs/${jobId}`),
+    enabled: !!databaseId && !!jobId,
+  });
+}
+
+export function useCreateRestoreJob() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      databaseId: string;
+      backupId: string;
+      targetDatabaseName: string;
+    }) =>
+      apiClient.post<RestoreJob>(`/databases/${data.databaseId}/restore/jobs`, {
+        backupId: data.backupId,
+        targetDatabaseName: data.targetDatabaseName,
+      }),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["restore-jobs", variables.databaseId] });
+    },
+  });
+}
+
+// ─── Container Actions ───────────────────────────────────────────────────────────
+
+export function useStartContainer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { serverId: string; containerId: string }) =>
+      apiClient.post(`/servers/${data.serverId}/containers/${data.containerId}/start`, {}),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["containers", variables.serverId] });
+    },
+  });
+}
+
+export function useStopContainer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { serverId: string; containerId: string }) =>
+      apiClient.post(`/servers/${data.serverId}/containers/${data.containerId}/stop`, {}),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["containers", variables.serverId] });
+    },
+  });
+}
+
+export function useRestartContainer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { serverId: string; containerId: string }) =>
+      apiClient.post(`/servers/${data.serverId}/containers/${data.containerId}/restart`, {}),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["containers", variables.serverId] });
+    },
+  });
+}
+
+export function useRemoveContainer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { serverId: string; containerId: string }) =>
+      apiClient.delete(`/servers/${data.serverId}/containers/${data.containerId}`),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["containers", variables.serverId] });
+    },
+  });
+}
+
+export function useContainerLogs(serverId: string, containerId: string, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ["container-logs", serverId, containerId],
+    queryFn: () =>
+      apiClient.get<{ logs: string }>(`/servers/${serverId}/containers/${containerId}/logs`),
+    enabled: enabled && !!serverId && !!containerId,
+    staleTime: 0,
   });
 }

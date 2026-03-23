@@ -62,6 +62,18 @@ public class DockerService : IDockerService
         return response.ID;
     }
 
+    public async Task StartContainerAsync(string endpoint, string containerId, CancellationToken ct = default)
+    {
+        var client = GetClient(endpoint);
+        await client.Containers.StartContainerAsync(containerId, new ContainerStartParameters(), ct);
+    }
+
+    public async Task RestartContainerAsync(string endpoint, string containerId, CancellationToken ct = default)
+    {
+        var client = GetClient(endpoint);
+        await client.Containers.RestartContainerAsync(containerId, new ContainerRestartParameters { WaitBeforeKillSeconds = 10 }, ct);
+    }
+
     public async Task StopContainerAsync(string endpoint, string containerId, CancellationToken ct = default)
     {
         var client = GetClient(endpoint);

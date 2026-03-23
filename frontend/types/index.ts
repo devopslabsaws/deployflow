@@ -216,10 +216,29 @@ export interface Service {
   resources: ResourceLimits;
   healthCheck?: HealthCheck;
   replicas: number;
+  minReplicas?: number;
+  maxReplicas?: number;
+  cpuTargetPercentage?: number;
+  memoryTargetPercentage?: number;
+  lastScalingAction?: string;
+  lastScalingReason?: string;
+  lastScaledAt?: string;
   domainId?: ID;
   createdAt: string;
   updatedAt: string;
   containerId?: string;
+}
+
+export interface ServiceScalingPolicy {
+  serviceId: ID;
+  currentReplicas: number;
+  minReplicas: number;
+  maxReplicas: number;
+  cpuTargetPercentage?: number;
+  memoryTargetPercentage?: number;
+  lastScalingAction?: string;
+  lastScalingReason?: string;
+  lastScaledAt?: string;
 }
 
 export interface ServicePort {
@@ -497,4 +516,63 @@ export interface AuditLog {
   userAgent?: string;
   metadata?: Record<string, any>;
   createdAt: string;
+}
+
+// ============================================================
+// S3 Destination
+// ============================================================
+
+export type S3DestinationStatus = "unconfigured" | "active" | "error";
+
+export interface S3Destination {
+  id: ID;
+  name: string;
+  description?: string;
+  endpoint: string;
+  bucketName: string;
+  region?: string;
+  isDefault: boolean;
+  status: S3DestinationStatus;
+  lastTestedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================================
+// Backup Policy
+// ============================================================
+
+export interface BackupPolicy {
+  id: ID;
+  databaseInstanceId: ID;
+  isEnabled: boolean;
+  cronExpression: string;
+  retentionDays: number;
+  s3DestinationId?: ID;
+  storageLocation: "local" | "s3";
+  lastRunAt?: string;
+  nextRunAt?: string;
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================================
+// Restore Job
+// ============================================================
+
+export type RestoreJobStatus = "pending" | "running" | "success" | "failed" | "cancelled";
+
+export interface RestoreJob {
+  id: ID;
+  databaseInstanceId: ID;
+  backupId: ID;
+  targetDatabaseName: string;
+  status: RestoreJobStatus;
+  startedAt?: string;
+  completedAt?: string;
+  errorMessage?: string;
+  progressPercent?: number;
+  createdAt: string;
+  updatedAt: string;
 }

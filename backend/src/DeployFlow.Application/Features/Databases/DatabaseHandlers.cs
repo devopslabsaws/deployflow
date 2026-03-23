@@ -131,15 +131,38 @@ public class DeleteDatabaseCommandHandler : IRequestHandler<DeleteDatabaseComman
 {
     private readonly IUnitOfWork _uow;
     private readonly ICurrentUser _currentUser;
+    private readonly IDatabaseRestoreJobService _restoreJobs;
 
-    public DeleteDatabaseCommandHandler(IUnitOfWork uow, ICurrentUser cu)
-    { _uow = uow; _currentUser = cu; }
+    public DeleteDatabaseCommandHandler(IUnitOfWork uow, ICurrentUser cu, IDatabaseRestoreJobService restoreJobs)
+    { _uow = uow; _currentUser = cu; _restoreJobs = restoreJobs; }
 
     public async Task<Result> Handle(DeleteDatabaseCommand request, CancellationToken ct)
     {
         var db = await _uow.Databases.GetByIdAsync(request.Id, ct);
         if (db is null || db.TenantId != _currentUser.TenantId)
             return Result.Failure("Database not found.", 404);
+
+        if (db.Status == DatabaseInstanceStatus.Restoring || await _restoreJobs.HasActiveRestoreAsync(db.Id, ct))
+            return Result.Failure("Database restore is in progress. Wait for restore completion before deleting.", 409);
+
+        if (db.BackupEnabled)
+        {
+            var latestCompletedBackup = await _uow.DatabaseBackups.GetLatestCompletedAsync(db.Id, ct);
+            if (latestCompletedBackup is null)
+            {
+                return Result.Failure(
+                    "Delete blocked: no completed backup found. Run a backup before deleting this database.",
+                    409);
+            }
+
+            var latestBackupAt = latestCompletedBackup.CompletedAt ?? latestCompletedBackup.CreatedAt;
+            if (latestBackupAt < DateTime.UtcNow.AddDays(-7))
+            {
+                return Result.Failure(
+                    "Delete blocked: latest backup is older than 7 days. Run a fresh backup first.",
+                    409);
+            }
+        }
 
         db.SoftDelete(_currentUser.UserId);
         await _uow.SaveChangesAsync(ct);

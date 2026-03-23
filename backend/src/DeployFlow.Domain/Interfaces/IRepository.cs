@@ -1,4 +1,5 @@
 using DeployFlow.Domain.Common;
+using DeployFlow.Domain.Entities;
 using System.Linq.Expressions;
 
 namespace DeployFlow.Domain.Interfaces;
@@ -22,6 +23,10 @@ public interface IUnitOfWork : IDisposable
     IServerRepository Servers { get; }
     IServiceRepository Services { get; }
     IDatabaseRepository Databases { get; }
+    IDatabaseBackupRepository DatabaseBackups { get; }
+    ITenantRepository<S3Destination> S3Destinations { get; }
+    ITenantRepository<BackupPolicy> BackupPolicies { get; }
+    ITenantRepository<RestoreJob> RestoreJobs { get; }
     IPipelineRepository Pipelines { get; }
     IAuditLogRepository AuditLogs { get; }
     IAlertRepository Alerts { get; }

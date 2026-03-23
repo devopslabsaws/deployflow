@@ -20,6 +20,22 @@ public class ServicesController : BaseController
         return ToResponse(result);
     }
 
+    /// <summary>Get a service by id.</summary>
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
+    {
+        var result = await Mediator.Send(new GetServiceQuery(id), ct);
+        return ToResponse(result);
+    }
+
+    /// <summary>Get the autoscaling policy for a service.</summary>
+    [HttpGet("{id:guid}/scaling-policy")]
+    public async Task<IActionResult> GetScalingPolicy(Guid id, CancellationToken ct)
+    {
+        var result = await Mediator.Send(new GetServiceScalingPolicyQuery(id), ct);
+        return ToResponse(result);
+    }
+
     /// <summary>Create a new service.</summary>
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateServiceRequest request, CancellationToken ct)
@@ -60,6 +76,28 @@ public class ServicesController : BaseController
         var result = await Mediator.Send(new DeleteServiceCommand(id), ct);
         return ToResponse(result);
     }
+
+    /// <summary>Update the autoscaling policy for a service.</summary>
+    [HttpPut("{id:guid}/scaling-policy")]
+    public async Task<IActionResult> UpdateScalingPolicy(Guid id, [FromBody] UpdateServiceScalingPolicyRequest request, CancellationToken ct)
+    {
+        var result = await Mediator.Send(new UpdateServiceScalingPolicyCommand(
+            id,
+            request.MinReplicas,
+            request.MaxReplicas,
+            request.CpuTargetPercentage,
+            request.MemoryTargetPercentage,
+            request.TriggerReason,
+            request.LastScalingAction), ct);
+        return ToResponse(result);
+    }
 }
 
 public record CreateServiceRequest(Guid ProjectId, string Name, string Type, string? Image = null, string? Tag = null);
+public record UpdateServiceScalingPolicyRequest(
+    int MinReplicas,
+    int MaxReplicas,
+    int? CpuTargetPercentage,
+    int? MemoryTargetPercentage,
+    string? TriggerReason = null,
+    string? LastScalingAction = null);
