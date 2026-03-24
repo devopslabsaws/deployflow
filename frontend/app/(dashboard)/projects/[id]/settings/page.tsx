@@ -8,7 +8,7 @@ import { z } from "zod";
 import Link from "next/link";
 import {
   ArrowLeft, Loader2, Trash2, GitBranch, Globe, Terminal,
-  Code2, Settings, AlertTriangle, Sparkles, ChevronDown, ChevronUp,
+  Code2, Settings, AlertTriangle, Sparkles, ChevronDown, ChevronUp, RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,37 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/hooks/use-api";
 import { toast } from "sonner";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+async function fetchRepoBranches(repoUrl: string): Promise<string[]> {
+  const githubMatch = repoUrl.match(/github\.com\/([^/]+)\/([^/?.#]+)/);
+  const gitlabMatch = repoUrl.match(/gitlab\.com\/([^/]+(?:\/[^/]+)*)\/([^/?.#]+)/);
+
+  if (githubMatch) {
+    const [, owner, repo] = githubMatch;
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo.replace(/\.git$/, "")}/branches?per_page=100`);
+    if (!res.ok) throw new Error("Could not fetch branches \u2014 repository may be private or not found.");
+    const data = await res.json();
+    return (data as any[]).map((b) => b.name as string);
+  }
+
+  if (gitlabMatch) {
+    const [, namespace, repo] = gitlabMatch;
+    const encoded = encodeURIComponent(`${namespace}/${repo.replace(/\.git$/, "")}`);
+    const res = await fetch(`https://gitlab.com/api/v4/projects/${encoded}/repository/branches?per_page=100`);
+    if (!res.ok) throw new Error("Could not fetch branches \u2014 repository may be private or not found.");
+    const data = await res.json();
+    return (data as any[]).map((b) => b.name as string);
+  }
+
+  throw new Error("Unsupported URL. Only GitHub and GitLab are supported.");
+}
 
 const schema = z.object({
   name: z.string().min(2).max(100).regex(/^[a-zA-Z0-9\s\-_.]+$/, "Name contains invalid characters"),
@@ -97,6 +128,28 @@ export default function ProjectSettingsPage() {
   });
 
   const autoDeploy = watch("autoDeploy");
+  const repositoryUrl = watch("repositoryUrl");
+
+  const [branches, setBranches] = useState<string[]>([]);
+  const [fetchingBranches, setFetchingBranches] = useState(false);
+
+  async function handleFetchBranches() {
+    if (!repositoryUrl) return;
+    setFetchingBranches(true);
+    try {
+      const result = await fetchRepoBranches(repositoryUrl);
+      setBranches(result);
+      const currentBranch = watch("branch");
+      if (result.length > 0 && !result.includes(currentBranch ?? "main")) {
+        setValue("branch", result[0], { shouldDirty: true });
+      }
+      toast.success(`Fetched ${result.length} branch${result.length !== 1 ? "es" : ""}`);
+    } catch (e: any) {
+      toast.error("Failed to fetch branches", { description: e.message });
+    } finally {
+      setFetchingBranches(false);
+    }
+  }
 
   // Populate form once project loads
   useEffect(() => {
@@ -202,12 +255,45 @@ export default function ProjectSettingsPage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="branch" className="text-xs">Default Branch</Label>
-              <Input
-                id="branch"
-                className="h-8 text-sm font-mono"
-                placeholder="main"
-                {...register("branch")}
-              />
+              <div className="flex gap-2">
+                {branches.length > 0 ? (
+                  <Select
+                    value={watch("branch") ?? "main"}
+                    onValueChange={(v) => setValue("branch", v, { shouldDirty: true })}
+                  >
+                    <SelectTrigger className="flex-1 h-8 text-sm font-mono">
+                      <SelectValue placeholder="Select branch..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {branches.map((b) => (
+                        <SelectItem key={b} value={b} className="text-sm font-mono">{b}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    id="branch"
+                    className="h-8 text-sm font-mono flex-1"
+                    placeholder="main"
+                    {...register("branch")}
+                  />
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  disabled={!repositoryUrl || fetchingBranches}
+                  onClick={handleFetchBranches}
+                  title="Fetch branches from repository"
+                >
+                  {fetchingBranches ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="customDomain" className="text-xs">Custom Domain</Label>

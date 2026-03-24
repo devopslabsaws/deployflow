@@ -108,7 +108,8 @@ export default function ComposePage() {
     environmentName: "production",
   });
 
-  const { data: stacks = [], isLoading } = useComposeStacks();
+  const { data: stacksData, isLoading } = useComposeStacks();
+  const stacks = stacksData ?? [];
   const { data: projects } = useProjects();
   const projectList = projects?.data ?? [];
   const { data: servers = [] } = useServers();

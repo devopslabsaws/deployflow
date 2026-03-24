@@ -127,14 +127,14 @@ public class AuthController : BaseController
     public IActionResult GitHubSignIn()
     {
         var clientId    = _config["GitHub:ClientId"];
-        var callbackUrl = _config["GitHub:CallbackUrl"];
+        var callbackUrl = GetCallbackUrl("GitHub", "github");
 
         if (string.IsNullOrEmpty(clientId))
             return BadRequest(new { error = "GitHub OAuth is not configured. Set GitHub:ClientId in appsettings." });
 
         var url = "https://github.com/login/oauth/authorize" +
                   $"?client_id={Uri.EscapeDataString(clientId)}" +
-                  $"&redirect_uri={Uri.EscapeDataString(callbackUrl ?? "")}" +
+                  $"&redirect_uri={Uri.EscapeDataString(callbackUrl)}" +
                   "&scope=user:email" +
                   $"&state={Guid.NewGuid():N}";
 
@@ -157,14 +157,14 @@ public class AuthController : BaseController
     public IActionResult GoogleSignIn()
     {
         var clientId    = _config["Google:ClientId"];
-        var callbackUrl = _config["Google:CallbackUrl"];
+        var callbackUrl = GetCallbackUrl("Google", "google");
 
         if (string.IsNullOrEmpty(clientId))
             return BadRequest(new { error = "Google OAuth is not configured. Set Google:ClientId in appsettings." });
 
         var url = "https://accounts.google.com/o/oauth2/v2/auth" +
                   $"?client_id={Uri.EscapeDataString(clientId)}" +
-                  $"&redirect_uri={Uri.EscapeDataString(callbackUrl ?? "")}" +
+                  $"&redirect_uri={Uri.EscapeDataString(callbackUrl)}" +
                   "&scope=openid+email+profile" +
                   "&response_type=code" +
                   "&access_type=offline" +
@@ -189,7 +189,7 @@ public class AuthController : BaseController
     public IActionResult GitLabSignIn()
     {
         var clientId    = _config["GitLab:ClientId"];
-        var callbackUrl = _config["GitLab:CallbackUrl"];
+        var callbackUrl = GetCallbackUrl("GitLab", "gitlab");
         var baseUrl     = _config["GitLab:BaseUrl"] ?? "https://gitlab.com";
 
         if (string.IsNullOrEmpty(clientId))
@@ -197,7 +197,7 @@ public class AuthController : BaseController
 
         var url = $"{baseUrl}/oauth/authorize" +
                   $"?client_id={Uri.EscapeDataString(clientId)}" +
-                  $"&redirect_uri={Uri.EscapeDataString(callbackUrl ?? "")}" +
+                  $"&redirect_uri={Uri.EscapeDataString(callbackUrl)}" +
                   "&scope=read_user" +
                   "&response_type=code" +
                   $"&state={Guid.NewGuid():N}";
@@ -225,7 +225,7 @@ public class AuthController : BaseController
 
         if (!result.IsSuccess)
         {
-            var frontendUrl = _config["GitHub:FrontendUrl"] ?? "http://localhost:3003";
+            var frontendUrl = GetFrontendUrl();
             return Redirect($"{frontendUrl}/login?error={Uri.EscapeDataString(result.Error ?? "SSO failed")}");
         }
 
@@ -242,7 +242,7 @@ public class AuthController : BaseController
     {
         if (!string.IsNullOrEmpty(error) || string.IsNullOrEmpty(code) || string.IsNullOrEmpty(state))
         {
-            var fe = _config["GitHub:FrontendUrl"] ?? "http://localhost:3003";
+            var fe = GetFrontendUrl();
             return Redirect($"{fe}/login?error={Uri.EscapeDataString(error ?? "Missing SSO parameters")}");
         }
 
@@ -251,10 +251,42 @@ public class AuthController : BaseController
 
     // ── Shared helper ────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Returns the frontend base URL. Uses config value when set (prod env var);
+    /// otherwise derives it from the incoming request (works behind nginx which
+    /// forwards the original Host header via proxy_set_header Host $host).
+    /// </summary>
+    private string GetFrontendUrl()
+    {
+        var cfgUrl = _config["GitHub:FrontendUrl"];
+        if (!string.IsNullOrEmpty(cfgUrl)) return cfgUrl.TrimEnd('/');
+
+        var scheme = Request.Headers.TryGetValue("X-Forwarded-Proto", out var proto)
+            ? proto.ToString()
+            : Request.Scheme;
+        return $"{scheme}://{Request.Host.Value}";
+    }
+
+    /// <summary>
+    /// Returns the OAuth callback URL for the given provider. Prefers the configured
+    /// value (e.g. GitHub:CallbackUrl set via env var); falls back to constructing
+    /// it from the incoming request so it works on any host without hardcoding.
+    /// </summary>
+    private string GetCallbackUrl(string configKey, string providerPath)
+    {
+        var cfgUrl = _config[$"{configKey}:CallbackUrl"];
+        if (!string.IsNullOrEmpty(cfgUrl)) return cfgUrl;
+
+        var scheme = Request.Headers.TryGetValue("X-Forwarded-Proto", out var proto)
+            ? proto.ToString()
+            : Request.Scheme;
+        return $"{scheme}://{Request.Host.Value}/api/auth/{providerPath}/callback";
+    }
+
     private async Task<IActionResult> OAuthCallback(
         Func<Task<Result<AuthTokensDto>>> handler, string? code, string? error)
     {
-        var frontendUrl = _config["GitHub:FrontendUrl"] ?? "http://localhost:3003";
+        var frontendUrl = GetFrontendUrl();
 
         if (!string.IsNullOrEmpty(error))
             return Redirect($"{frontendUrl}/login?error={Uri.EscapeDataString(error)}");
