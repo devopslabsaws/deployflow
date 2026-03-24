@@ -90,8 +90,18 @@ public class DetectStackQueryHandler : IRequestHandler<DetectStackQuery, Result<
         }
 
         // ── Node/JS — detect specific framework ──────────────────────────────
-        if (files.Contains("package.json") && !string.IsNullOrEmpty(pkg))
+        if (files.Contains("package.json"))
         {
+            // If no package.json content was provided, return generic Node.js so we never fall through to Unknown
+            if (string.IsNullOrEmpty(pkg))
+                return new DetectedStack(
+                    DetectedFramework.Nodejs, "javascript",
+                    Dockerfiles.NodeDockerfile(),
+                    "", "node index.js", "npm install",
+                    3000,
+                    ["PORT", "NODE_ENV"],
+                    "Detected Node.js project (package.json found). Paste package.json contents for a more specific framework match (Next.js, Express, NestJS, React, etc.).");
+
             if (pkg.Contains("\"next\""))
                 return new DetectedStack(
                     DetectedFramework.Nextjs, "typescript",
@@ -164,7 +174,7 @@ public class DetectStackQueryHandler : IRequestHandler<DetectStackQuery, Result<
                 3000,
                 ["PORT", "NODE_ENV"],
                 "Detected Node.js app.");
-        }
+        } // end Node.js block
 
         // ── Python ────────────────────────────────────────────────────────────
         if (files.Contains("requirements.txt") || files.Contains("pipfile") || files.Contains("pyproject.toml"))

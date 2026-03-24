@@ -4,7 +4,6 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckCircle2,
-  Circle,
   GitBranch,
   Rocket,
   Settings2,
@@ -12,9 +11,9 @@ import {
   Zap,
   ChevronRight,
   ChevronLeft,
-  Upload,
   Code2,
   Loader2,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,7 +43,25 @@ const FRAMEWORK_COLORS: Record<string, string> = {
   Django: "bg-green-700 text-white",
   Go: "bg-cyan-500 text-white",
   Static: "bg-gray-500 text-white",
+  Nodejs: "bg-green-600 text-white",
+  Express: "bg-gray-700 text-white",
+  Nestjs: "bg-red-600 text-white",
 };
+
+/** Parse owner/repo from a GitHub or GitLab URL */
+function parseGitRepo(url: string): { host: "github" | "gitlab" | null; owner: string; repo: string } | null {
+  try {
+    const u = new URL(url.replace(/\.git$/, ""));
+    const parts = u.pathname.replace(/^\//, "").split("/");
+    if (parts.length < 2) return null;
+    const [owner, repo] = parts;
+    if (u.hostname === "github.com") return { host: "github", owner, repo };
+    if (u.hostname === "gitlab.com") return { host: "gitlab", owner, repo };
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 export default function OnboardingPage() {
   const [currentStep, setCurrentStep] = useState(1);
@@ -54,10 +71,50 @@ export default function OnboardingPage() {
   const [detectedStack, setDetectedStack] = useState<DetectedStackDto | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
+  const [fetching, setFetching] = useState(false);
 
   const detectStack = useDetectStack();
   const { data: projects } = useProjects();
   const { data: servers } = useServers();
+
+  /** Fetch file list from GitHub/GitLab API and auto-fill the textarea */
+  async function handleFetchFiles() {
+    const parsed = parseGitRepo(repoUrl);
+    if (!parsed) {
+      toast.error("Only github.com and gitlab.com URLs are supported for auto-fetch.");
+      return;
+    }
+    setFetching(true);
+    try {
+      if (parsed.host === "github") {
+        const res = await fetch(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}/contents/`, {
+          headers: { Accept: "application/vnd.github+json" },
+        });
+        if (!res.ok) throw new Error(res.status === 404 ? "Repository not found or private." : `GitHub API error ${res.status}`);
+        const items: { name: string; type: string }[] = await res.json();
+        const names = items.map((i) => i.type === "dir" ? `${i.name}/` : i.name);
+        setFileList(names.join("\n"));
+
+        // Try to fetch package.json content for better detection
+        const pkgRes = await fetch(`https://raw.githubusercontent.com/${parsed.owner}/${parsed.repo}/HEAD/package.json`);
+        if (pkgRes.ok) setPackageJson(await pkgRes.text());
+
+        toast.success(`Fetched ${names.length} files from GitHub`);
+      } else {
+        // GitLab
+        const encodedPath = encodeURIComponent(`${parsed.owner}/${parsed.repo}`);
+        const res = await fetch(`https://gitlab.com/api/v4/projects/${encodedPath}/repository/tree`);
+        if (!res.ok) throw new Error("GitLab API error — repository may be private.");
+        const items: { name: string; type: string }[] = await res.json();
+        setFileList(items.map((i) => i.type === "tree" ? `${i.name}/` : i.name).join("\n"));
+        toast.success(`Fetched ${items.length} files from GitLab`);
+      }
+    } catch (err: any) {
+      toast.error(err.message ?? "Failed to fetch repository contents");
+    } finally {
+      setFetching(false);
+    }
+  }
 
   function handleDetect() {
     const fileNames = fileList
@@ -182,7 +239,13 @@ export default function OnboardingPage() {
                 <Button
                   className="w-full"
                   disabled={!repoUrl}
-                  onClick={() => setCurrentStep(2)}
+                  onClick={async () => {
+                    setCurrentStep(2);
+                    // Auto-fetch if it's a public GitHub/GitLab repo
+                    if (parseGitRepo(repoUrl)) {
+                      await handleFetchFiles();
+                    }
+                  }}
                 >
                   Continue <ChevronRight className="ml-2 w-4 h-4" />
                 </Button>
@@ -198,13 +261,29 @@ export default function OnboardingPage() {
                   <Code2 className="w-5 h-5" /> Auto-detect your stack
                 </CardTitle>
                 <CardDescription>
-                  List the files in your project root (one per line) and optionally paste
-                  your package.json. DeployFlow will auto-generate a production Dockerfile.
+                  {parseGitRepo(repoUrl)
+                    ? "Files were auto-fetched from your repository. Click Detect Stack to identify your framework."
+                    : "List the files in your project root (one per line). DeployFlow will auto-generate a production Dockerfile."}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Root files (one per line)</Label>
+                  <div className="flex items-center justify-between">
+                    <Label>Root files (one per line)</Label>
+                    {parseGitRepo(repoUrl) && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs gap-1"
+                        disabled={fetching}
+                        onClick={handleFetchFiles}
+                      >
+                        {fetching ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                        Re-fetch files
+                      </Button>
+                    )}
+                  </div>
                   <Textarea
                     placeholder={"package.json\nnext.config.js\ntsconfig.json\npublic/"}
                     rows={5}

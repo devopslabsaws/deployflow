@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
@@ -13,7 +13,7 @@ import { useAcceptInvitation, useInvitationPreview } from "@/hooks/use-api";
 import { useAuthStore } from "@/store/auth-store";
 import { toast } from "sonner";
 
-export default function AcceptInvitationPage() {
+function AcceptInvitationContent() {
   const params = useSearchParams();
   const router = useRouter();
   const token = params.get("token") ?? "";
@@ -138,5 +138,13 @@ export default function AcceptInvitationPage() {
         </Card>
       </motion.div>
     </div>
+  );
+}
+
+export default function AcceptInvitationPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>}>
+      <AcceptInvitationContent />
+    </Suspense>
   );
 }

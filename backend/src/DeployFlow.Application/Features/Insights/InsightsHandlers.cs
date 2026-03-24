@@ -160,15 +160,19 @@ public class AnalyzeDeploymentErrorsQueryHandler
     public async Task<Result<List<ErrorSuggestion>>> Handle(
         AnalyzeDeploymentErrorsQuery request, CancellationToken ct)
     {
+        // Include the deployment's stored ErrorMessage so analysis works even when logs are empty
+        var deployment = await _uow.Deployments.GetByIdAsync(request.DeploymentId, ct);
+        var storedError = deployment?.ErrorMessage ?? "";
+
         var (logItems, _) = await _uow.Deployments.GetLogsPagedAsync(
             request.DeploymentId, page: 1, pageSize: 500, ct);
         var logs = logItems.Select(l => l.Message).ToList();
 
-        if (!logs.Any())
+        var combinedText = string.Join("\n", new[] { storedError }.Concat(logs).Where(s => !string.IsNullOrEmpty(s)));
+        if (string.IsNullOrEmpty(combinedText))
             return Result<List<ErrorSuggestion>>.Success([]);
 
-        var fullLog = string.Join("\n", logs);
-        var suggestions = Analyze(fullLog);
+        var suggestions = Analyze(combinedText);
         return Result<List<ErrorSuggestion>>.Success(suggestions);
     }
 
@@ -176,6 +180,20 @@ public class AnalyzeDeploymentErrorsQueryHandler
     {
         var results = new List<ErrorSuggestion>();
         var l = log.ToLowerInvariant();
+
+        // Cryptographic / AES key mismatch
+        if (System.Text.RegularExpressions.Regex.IsMatch(l, @"padding is invalid|cryptographicexception|bad decrypt|mac check.*failed|invalid.*padding|cannot be removed"))
+            results.Add(new("crypto-error", "Encryption Key Mismatch (AES Padding Error)",
+                "An AES decryption operation failed because the data was encrypted with a different ENCRYPTION_SECRET than the one currently set.",
+                "Restore the original ENCRYPTION_SECRET in your environment variables. If the original key is unavailable, delete all rows from RefreshTokens table (forces re-login) and restart the API.",
+                "critical"));
+
+        // JWT / auth token errors
+        if (System.Text.RegularExpressions.Regex.IsMatch(l, @"securitytokenexception|invalid.*token|token.*invalid|idx\d{5}|signature.*invalid|jwt.*error"))
+            results.Add(new("auth-error", "JWT Token Validation Failed",
+                "Authentication tokens are failing signature validation. The JWT_SECRET may have been rotated after tokens were issued.",
+                "Verify JWT_SECRET matches the value used when active tokens were created. Changing it invalidates all existing sessions — users must log in again.",
+                "high"));
 
         // Port conflicts
         if (l.Contains("eaddrinuse") || l.Contains("address already in use") || l.Contains("port is already allocated"))
