@@ -780,9 +780,38 @@ namespace DeployFlow.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("RAW(16)");
 
+                    b.Property<string>("ApprovalNotes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("NVARCHAR2(1000)");
+
+                    b.Property<string>("ApprovalStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("ApprovedBy")
+                        .HasColumnType("RAW(16)");
+
                     b.Property<string>("Branch")
                         .HasMaxLength(200)
                         .HasColumnType("NVARCHAR2(200)");
+
+                    b.Property<DateTime?>("CanaryStartedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<string>("CanaryStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<int>("CanaryStepDurationMinutes")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<int>("CanaryTrafficPercent")
+                        .HasColumnType("NUMBER(10)");
 
                     b.Property<string>("CommitAuthor")
                         .HasMaxLength(200)
@@ -1935,7 +1964,13 @@ namespace DeployFlow.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("NVARCHAR2(100)");
 
+                    b.Property<bool>("IsCordoned")
+                        .HasColumnType("NUMBER(1)");
+
                     b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<bool>("IsDraining")
                         .HasColumnType("NUMBER(1)");
 
                     b.Property<bool>("IsSwarmManager")
@@ -2008,6 +2043,8 @@ namespace DeployFlow.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("TenantId");
+
+                    b.HasIndex("Id", "IsCordoned");
 
                     b.HasIndex("TenantId", "Status");
 

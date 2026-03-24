@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import {
   Network, Plus, Trash2, Server, Loader2, ChevronRight,
-  Shuffle, Activity, Copy,
+  Shuffle, Activity, MoreHorizontal, ShieldOff, Shield, ArrowDownToLine,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -16,9 +17,13 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
+import { useCordonNode, useUncordonNode, useDrainNode, useRebalanceCluster } from "@/hooks/use-api";
 
 interface ClusterNode {
   serverId: string;
@@ -27,6 +32,8 @@ interface ClusterNode {
   status: string;
   cpuUsagePercent?: number;
   memoryUsagePercent?: number;
+  isCordoned?: boolean;
+  isDraining?: boolean;
 }
 
 interface Cluster {
@@ -35,6 +42,12 @@ interface Cluster {
   strategy: "RoundRobin" | "LeastLoaded" | "Replicated";
   nodeCount: number;
   nodes?: ClusterNode[];
+}
+
+interface RebalanceResult {
+  clusterId: string;
+  totalNodes: number;
+  healthyNodes: number;
 }
 
 const STRATEGY_LABELS: Record<string, string> = {
@@ -79,6 +92,17 @@ export default function ClustersPage() {
   const [previewClusterId, setPreviewClusterId] = useState<string | null>(null);
   const [nextNode, setNextNode] = useState<ClusterNode | null>(null);
   const [previewing, setPreviewing] = useState(false);
+
+  // Rebalance
+  const [rebalanceTarget, setRebalanceTarget] = useState<Cluster | null>(null);
+  const [rebalanceResult, setRebalanceResult] = useState<RebalanceResult | null>(null);
+  const rebalance = useRebalanceCluster();
+
+  // Node actions
+  const cordonNode = useCordonNode();
+  const uncordonNode = useUncordonNode();
+  const drainNode = useDrainNode();
+  const [nodeActionBusy, setNodeActionBusy] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -175,6 +199,50 @@ export default function ClustersPage() {
     }
   };
 
+  const handleNodeAction = async (
+    action: "cordon" | "uncordon" | "drain",
+    clusterId: string,
+    node: ClusterNode,
+  ) => {
+    setNodeActionBusy(node.serverId);
+    try {
+      if (action === "cordon") {
+        await cordonNode.mutateAsync({ clusterId, serverId: node.serverId });
+        toast.success(`Node ${node.name} cordoned — no new deployments will be scheduled here`);
+        setClusters(cs => cs.map(c => c.id === clusterId
+          ? { ...c, nodes: c.nodes?.map(n => n.serverId === node.serverId ? { ...n, isCordoned: true } : n) }
+          : c));
+      } else if (action === "uncordon") {
+        await uncordonNode.mutateAsync({ clusterId, serverId: node.serverId });
+        toast.success(`Node ${node.name} uncordoned — accepting deployments again`);
+        setClusters(cs => cs.map(c => c.id === clusterId
+          ? { ...c, nodes: c.nodes?.map(n => n.serverId === node.serverId ? { ...n, isCordoned: false, isDraining: false } : n) }
+          : c));
+      } else {
+        await drainNode.mutateAsync({ clusterId, serverId: node.serverId });
+        toast.success(`Node ${node.name} is draining — workloads will migrate`);
+        setClusters(cs => cs.map(c => c.id === clusterId
+          ? { ...c, nodes: c.nodes?.map(n => n.serverId === node.serverId ? { ...n, isCordoned: true, isDraining: true } : n) }
+          : c));
+      }
+    } catch (e: any) {
+      toast.error(`Failed to ${action} node`, { description: e.message });
+    } finally {
+      setNodeActionBusy(null);
+    }
+  };
+
+  const handleRebalance = async () => {
+    if (!rebalanceTarget) return;
+    try {
+      const result: any = await rebalance.mutateAsync(rebalanceTarget.id);
+      setRebalanceResult(result);
+    } catch (e: any) {
+      toast.error("Rebalance failed", { description: e.message });
+      setRebalanceTarget(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -248,6 +316,14 @@ export default function ClustersPage() {
                     <Button
                       size="sm"
                       variant="outline"
+                      onClick={() => { setRebalanceTarget(cluster); setRebalanceResult(null); }}
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                      Rebalance
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
                       onClick={() => { setAddNodeOpen(cluster.id); setNodeServerId(""); }}
                     >
                       <Plus className="w-3.5 h-3.5 mr-1.5" />
@@ -277,12 +353,28 @@ export default function ClustersPage() {
                       {cluster.nodes.map(node => (
                         <div
                           key={node.serverId}
-                          className="flex items-center justify-between rounded-lg border bg-card/40 px-3 py-2"
+                          className={`flex items-center justify-between rounded-lg border px-3 py-2 ${
+                            node.isDraining ? "bg-orange-500/5 border-orange-500/20" :
+                            node.isCordoned ? "bg-yellow-500/5 border-yellow-500/20" :
+                            "bg-card/40"
+                          }`}
                         >
                           <div className="flex items-center gap-3">
                             <Server className="w-4 h-4 text-muted-foreground" />
                             <div>
-                              <p className="text-sm font-medium">{node.name}</p>
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-medium">{node.name}</p>
+                                {node.isDraining && (
+                                  <span className="text-xs px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-500 border border-orange-500/20 font-medium">
+                                    Draining
+                                  </span>
+                                )}
+                                {!node.isDraining && node.isCordoned && (
+                                  <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 font-medium">
+                                    Cordoned
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-xs text-muted-foreground font-mono">{node.ipAddress}</p>
                             </div>
                           </div>
@@ -299,17 +391,51 @@ export default function ClustersPage() {
                             >
                               {node.status}
                             </Badge>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-6 w-6 text-destructive hover:text-destructive"
-                              disabled={removingNode === node.serverId}
-                              onClick={() => setRemoveNodeTarget({ clusterId: cluster.id, serverId: node.serverId, name: node.name })}
-                            >
-                              {removingNode === node.serverId
-                                ? <Loader2 className="w-3 h-3 animate-spin" />
-                                : <Trash2 className="w-3 h-3" />}
-                            </Button>
+
+                            {/* Node action menu */}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6"
+                                  disabled={nodeActionBusy === node.serverId}
+                                >
+                                  {nodeActionBusy === node.serverId
+                                    ? <Loader2 className="w-3 h-3 animate-spin" />
+                                    : <MoreHorizontal className="w-3 h-3" />}
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {node.isCordoned ? (
+                                  <DropdownMenuItem onClick={() => handleNodeAction("uncordon", cluster.id, node)}>
+                                    <Shield className="w-3.5 h-3.5 mr-2 text-green-500" />
+                                    Uncordon
+                                  </DropdownMenuItem>
+                                ) : (
+                                  <DropdownMenuItem onClick={() => handleNodeAction("cordon", cluster.id, node)}>
+                                    <ShieldOff className="w-3.5 h-3.5 mr-2 text-yellow-500" />
+                                    Cordon
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem
+                                  disabled={node.isDraining}
+                                  onClick={() => handleNodeAction("drain", cluster.id, node)}
+                                >
+                                  <ArrowDownToLine className="w-3.5 h-3.5 mr-2 text-orange-500" />
+                                  Drain
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  disabled={removingNode === node.serverId}
+                                  onClick={() => setRemoveNodeTarget({ clusterId: cluster.id, serverId: node.serverId, name: node.name })}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 mr-2" />
+                                  Remove from cluster
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </div>
                       ))}
@@ -405,12 +531,64 @@ export default function ClustersPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Rebalance Dialog */}
+      <Dialog open={!!rebalanceTarget} onOpenChange={v => { if (!v) { setRebalanceTarget(null); setRebalanceResult(null); } }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="w-4 h-4" />
+              Rebalance Cluster
+            </DialogTitle>
+          </DialogHeader>
+          {rebalanceResult ? (
+            <div className="py-4 space-y-3">
+              <div className="rounded-lg border bg-green-500/5 border-green-500/20 p-4 space-y-2">
+                <p className="text-sm font-medium text-green-600">Rebalance complete</p>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Total Nodes</p>
+                    <p className="font-semibold">{rebalanceResult.totalNodes}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Healthy Nodes</p>
+                    <p className="font-semibold text-green-600">{rebalanceResult.healthyNodes}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Round-robin cursor reset — next deployment will start from the first available node.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="py-2">
+              <p className="text-sm text-muted-foreground">
+                Rebalancing <span className="font-medium text-foreground">{rebalanceTarget?.name}</span> will reset the round-robin cursor and return a health summary of all active nodes.
+              </p>
+              <p className="text-xs text-muted-foreground mt-2">
+                Cordoned and draining nodes will be excluded from the healthy count.
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setRebalanceTarget(null); setRebalanceResult(null); }}>
+              {rebalanceResult ? "Close" : "Cancel"}
+            </Button>
+            {!rebalanceResult && (
+              <Button disabled={rebalance.isPending} onClick={handleRebalance}>
+                {rebalance.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}
+                Rebalance
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <ConfirmActionDialog
         open={!!removeNodeTarget}
         onOpenChange={(open) => { if (!open) setRemoveNodeTarget(null); }}
         title="Remove Cluster Node"
         description={removeNodeTarget
-          ? `Remove node \"${removeNodeTarget.name}\" from this cluster?`
+          ? `Remove node "${removeNodeTarget.name}" from this cluster?`
           : "Remove this node from the cluster?"}
         confirmLabel="Remove Node"
         isConfirming={Boolean(removingNode)}

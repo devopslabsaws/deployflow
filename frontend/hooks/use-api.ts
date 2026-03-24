@@ -375,6 +375,97 @@ export function useCancelDeployment() {
   });
 }
 
+// ─── Deployment Approvals ─────────────────────────────────────────────────────
+
+export function useApproveDeployment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, notes }: { id: string; notes?: string }) =>
+      apiClient.post(`/deployments/${id}/approve`, { notes: notes ?? null }),
+    onSuccess: (_d, { id }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.deployments.detail(id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.deployments.all });
+    },
+  });
+}
+
+export function useRejectDeployment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, notes }: { id: string; notes?: string }) =>
+      apiClient.post(`/deployments/${id}/reject`, { notes: notes ?? null }),
+    onSuccess: (_d, { id }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.deployments.detail(id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.deployments.all });
+    },
+  });
+}
+
+// ─── Canary Releases ──────────────────────────────────────────────────────────
+
+export function useStartCanary() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, trafficPercent, stepDurationMinutes }: { id: string; trafficPercent: number; stepDurationMinutes: number }) =>
+      apiClient.post(`/deployments/${id}/canary/start`, { trafficPercent, stepDurationMinutes }),
+    onSuccess: (_d, { id }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.deployments.detail(id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.deployments.all });
+    },
+  });
+}
+
+export function usePromoteCanary() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.post(`/deployments/${id}/canary/promote`, {}),
+    onSuccess: (_d, id) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.deployments.detail(id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.deployments.all });
+    },
+  });
+}
+
+export function useAbortCanary() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.post(`/deployments/${id}/canary/abort`, {}),
+    onSuccess: (_d, id) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.deployments.detail(id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.deployments.all });
+    },
+  });
+}
+
+// ─── Cluster Node Lifecycle ───────────────────────────────────────────────────
+
+export function useCordonNode() {
+  return useMutation({
+    mutationFn: ({ clusterId, serverId }: { clusterId: string; serverId: string }) =>
+      apiClient.post(`/clusters/${clusterId}/nodes/${serverId}/cordon`, {}),
+  });
+}
+
+export function useUncordonNode() {
+  return useMutation({
+    mutationFn: ({ clusterId, serverId }: { clusterId: string; serverId: string }) =>
+      apiClient.post(`/clusters/${clusterId}/nodes/${serverId}/uncordon`, {}),
+  });
+}
+
+export function useDrainNode() {
+  return useMutation({
+    mutationFn: ({ clusterId, serverId }: { clusterId: string; serverId: string }) =>
+      apiClient.post(`/clusters/${clusterId}/nodes/${serverId}/drain`, {}),
+  });
+}
+
+export function useRebalanceCluster() {
+  return useMutation({
+    mutationFn: (clusterId: string) => apiClient.post(`/clusters/${clusterId}/rebalance`, {}),
+  });
+}
+
 // ─── Servers ──────────────────────────────────────────────────────────────────
 
 export function useServers() {
@@ -722,6 +813,26 @@ export function useUpdatePipeline() {
       apiClient.put(`/pipelines/${id}`, data),
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.detail(vars.id) });
+    },
+  });
+}
+
+export function useUpdatePipelineStages() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      stages,
+    }: {
+      id: string;
+      stages: Array<{
+        name: string;
+        runParallel: boolean;
+        steps: Array<{ name: string; type: string; command?: string; timeout?: number }>;
+      }>;
+    }) => apiClient.put(`/pipelines/${id}/stages`, stages),
+    onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.detail(vars.id) });
     },
   });
@@ -1767,3 +1878,544 @@ export function useContainerLogs(serverId: string, containerId: string, enabled:
     staleTime: 0,
   });
 }
+
+// ─── AI / Debugging ───────────────────────────────────────────────────────────
+
+export interface AiAnalysis {
+  deploymentId: string;
+  severity: string; // critical | high | medium | low | ok
+  diagnosis: string;
+  rootCause: string;
+  suggestions: { title: string; detail: string; category: string }[];
+  autoFixes: { id: string; label: string; command: string; destructive: boolean }[];
+  analyzedAt: string;
+}
+
+export interface AiChatResult {
+  reply: string;
+  quickReplies: string[];
+}
+
+export function useAiAnalyzeDeployment(id: string, enabled = false) {
+  return useQuery({
+    queryKey: ["ai-analysis", id],
+    queryFn: () => apiClient.get<AiAnalysis>(`/ai/analyze/${id}`),
+    enabled: enabled && !!id,
+    staleTime: 60_000,
+  });
+}
+
+export function useAiChat() {
+  return useMutation({
+    mutationFn: (data: { message: string; deploymentId?: string }) =>
+      apiClient.post<AiChatResult>("/ai/chat", data),
+  });
+}
+
+// ─── Clone Project ─────────────────────────────────────────────────────────
+
+export function useCloneProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, newName }: { id: string; newName?: string }) =>
+      apiClient.post<Project>(`/projects/${id}/clone`, { newName }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.projects.all }),
+  });
+}
+
+// ─── Cost Breakdown / Budget ─────────────────────────────────────────────────
+
+export interface CostBreakdownItem {
+  label: string;
+  category: string;
+  amount: number;
+  percentage: number;
+  dailyAverage: number;
+  trend: "up" | "down" | "flat";
+}
+
+export interface CostBreakdownResult {
+  period: string;
+  groupBy: string;
+  items: CostBreakdownItem[];
+  totalCost: number;
+  itemCount: number;
+}
+
+export function useCostBreakdown(period = "3m", groupBy = "resource") {
+  return useQuery({
+    queryKey: ["cost-breakdown", period, groupBy],
+    queryFn: () =>
+      apiClient.get<CostBreakdownResult>("/costs/breakdown", { params: { period, groupBy } }),
+    staleTime: 300_000,
+  });
+}
+
+export function useSetBudget() {
+  return useMutation({
+    mutationFn: (data: { monthlyBudget: number; alertAt?: number }) =>
+      apiClient.post("/costs/budget", data),
+  });
+}
+
+// ─── Environments ─────────────────────────────────────────────────────────────
+
+export interface EnvironmentDto {
+  id: string;
+  name: string;
+  slug: string;
+  isDefault: boolean;
+  isProduction: boolean;
+  order: number;
+}
+
+export function useEnvironments() {
+  return useQuery({
+    queryKey: ["environments"],
+    queryFn: () => apiClient.get<EnvironmentDto[]>("/environments"),
+    staleTime: 60_000,
+  });
+}
+
+export function useCreateEnvironment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { name: string; slug: string; isProduction: boolean; order: number }) =>
+      apiClient.post<EnvironmentDto>("/environments", data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["environments"] }),
+  });
+}
+
+export function useDeleteEnvironment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/environments/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["environments"] }),
+  });
+}
+
+// ─── Templates ───────────────────────────────────────────────────────────────
+
+export interface TemplateEnvVarDto {
+  key: string;
+  defaultValue?: string;
+  description?: string;
+  required: boolean;
+  isSecret: boolean;
+}
+
+export interface TemplateDto {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  category: string;
+  dockerImage: string;
+  logoUrl?: string;
+  documentationUrl?: string;
+  githubUrl?: string;
+  serviceType: string;
+  defaultPort: number;
+  requiresDatabase: boolean;
+  defaultDatabaseType?: string;
+  envVariables: TemplateEnvVarDto[];
+  deployCount: number;
+  isOfficial: boolean;
+  hasComposeYaml: boolean;
+}
+
+export function useTemplates(category?: string) {
+  return useQuery({
+    queryKey: ["templates", category],
+    queryFn: () => apiClient.get<TemplateDto[]>("/templates", { params: category ? { category } : undefined }),
+    staleTime: 300_000,
+  });
+}
+
+export function useDeployTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      slug: string;
+      projectId: string;
+      serverId?: string;
+      envOverrides?: Record<string, string>;
+      environmentName?: string;
+    }) => apiClient.post<string>(`/templates/${data.slug}/deploy`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["services"] }),
+  });
+}
+
+// ─── Docker Compose ───────────────────────────────────────────────────────────
+
+export interface ComposeStackDto {
+  id: string;
+  name: string;
+  projectId: string;
+  serverId?: string;
+  composeYaml: string;
+  status: "stopped" | "starting" | "running" | "failed" | "removing";
+  serviceCount: number;
+  lastDeployedAt?: string;
+  lastError?: string;
+  environmentName?: string;
+  createdAt: string;
+}
+
+export function useComposeStacks(projectId?: string) {
+  return useQuery({
+    queryKey: ["compose", projectId],
+    queryFn: () =>
+      apiClient.get<ComposeStackDto[]>("/compose", { params: projectId ? { projectId } : undefined }),
+  });
+}
+
+export function useCreateComposeStack() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      name: string;
+      projectId: string;
+      serverId?: string;
+      composeYaml: string;
+      environmentName?: string;
+    }) => apiClient.post<ComposeStackDto>("/compose", data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["compose"] }),
+  });
+}
+
+export function useDeployComposeStack() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.post<string>(`/compose/${id}/deploy`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["compose"] }),
+  });
+}
+
+export function useDeleteComposeStack() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/compose/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["compose"] }),
+  });
+}
+
+// ─── Traefik Routers ──────────────────────────────────────────────────────────
+
+export interface TraefikRouterDto {
+  id: string;
+  name: string;
+  rule: string;
+  serviceName: string;
+  entrypoints?: string;
+  tlsEnabled: boolean;
+  certResolver?: string;
+  priority: number;
+  isEnabled: boolean;
+  serverId?: string;
+  domainId?: string;
+  createdAt: string;
+}
+
+export function useTraefikRouters(serverId?: string) {
+  return useQuery({
+    queryKey: ["traefik-routers", serverId],
+    queryFn: () =>
+      apiClient.get<TraefikRouterDto[]>("/traefik/routers", { params: serverId ? { serverId } : undefined }),
+  });
+}
+
+export function useCreateTraefikRouter() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<TraefikRouterDto>) => apiClient.post<TraefikRouterDto>("/traefik/routers", data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["traefik-routers"] }),
+  });
+}
+
+export function useDeleteTraefikRouter() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/traefik/routers/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["traefik-routers"] }),
+  });
+}
+
+// ─── Server Provisioning ──────────────────────────────────────────────────────
+
+export interface ProvisioningJobDto {
+  id: string;
+  name: string;
+  provider: string;
+  region: string;
+  size: string;
+  os: string;
+  status: "pending" | "planning" | "applying" | "completed" | "failed" | "destroyed";
+  providerServerId?: string;
+  assignedIpAddress?: string;
+  planOutput?: string;
+  errorMessage?: string;
+  createdServerId?: string;
+  completedAt?: string;
+  createdAt: string;
+}
+
+export function useProvisioningJobs() {
+  return useQuery({
+    queryKey: ["provisioning-jobs"],
+    queryFn: () => apiClient.get<ProvisioningJobDto[]>("/provisioning"),
+  });
+}
+
+export function useProvisioningJob(id: string) {
+  return useQuery({
+    queryKey: ["provisioning-job", id],
+    queryFn: () => apiClient.get<ProvisioningJobDto>(`/provisioning/${id}`),
+    enabled: !!id,
+    refetchInterval: (query) =>
+      query.state.data?.status === "applying" ? 5000 : false,
+  });
+}
+
+export function usePlanServer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      name: string;
+      provider: string;
+      region: string;
+      size: string;
+      os: string;
+      sshKeyId?: string;
+      tags?: Record<string, string>;
+    }) => apiClient.post<ProvisioningJobDto>("/provisioning/plan", data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["provisioning-jobs"] }),
+  });
+}
+
+export function useApplyProvisioning() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.post<ProvisioningJobDto>(`/provisioning/${id}/apply`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["provisioning-jobs"] }),
+  });
+}
+
+// ─── Recovery Rules ───────────────────────────────────────────────────────────
+
+export interface RecoveryRuleDto {
+  id: string;
+  name: string;
+  trigger: string;
+  action: string;
+  maxRetries: number;
+  cooldownSeconds: number;
+  isEnabled: boolean;
+  retryCount: number;
+  lastTriggeredAt?: string;
+  targetServerId?: string;
+  targetProjectId?: string;
+}
+
+// ─── Stack Detection ──────────────────────────────────────────────────────────
+
+export interface DetectedStackDto {
+  framework: string;
+  language: string;
+  dockerfileContent: string;
+  buildCommand: string;
+  startCommand: string;
+  installCommand: string;
+  defaultPort: number;
+  suggestedEnvVars: string[];
+  explanation: string;
+}
+
+export function useDetectStack() {
+  return useMutation({
+    mutationFn: (data: {
+      fileNames: string[];
+      packageJsonContent?: string;
+      requirementsTxtContent?: string;
+    }) => apiClient.post<DetectedStackDto>("/stack-detection/detect", data),
+  });
+}
+
+export function useApplyStack(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      framework: string;
+      buildCommandOverride?: string;
+      startCommandOverride?: string;
+      installCommandOverride?: string;
+      portOverride?: number;
+    }) => apiClient.post<boolean>(`/stack-detection/apply/${projectId}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["projects"] }),
+  });
+}
+
+// ─── Preview Environments ─────────────────────────────────────────────────────
+
+export interface PreviewEnvironmentDto {
+  id: string;
+  projectId: string;
+  prNumber: number;
+  prTitle: string;
+  branch: string;
+  url: string;
+  status: string;
+  deploymentId?: string;
+  mergedAt?: string;
+  closedAt?: string;
+  createdAt: string;
+}
+
+export function usePreviewEnvironments(projectId?: string) {
+  return useQuery({
+    queryKey: ["preview-environments", projectId],
+    queryFn: () =>
+      apiClient.get<PreviewEnvironmentDto[]>("/preview-environments", {
+        params: projectId ? { projectId } : undefined,
+      }),
+    staleTime: 30_000,
+  });
+}
+
+export function useCreatePreviewEnvironment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      projectId: string;
+      prNumber: number;
+      prTitle: string;
+      branch: string;
+    }) => apiClient.post<PreviewEnvironmentDto>("/preview-environments", data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["preview-environments"] }),
+  });
+}
+
+export function useUpdatePreviewStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, status, url }: { id: string; status: string; url?: string }) =>
+      apiClient.patch<boolean>(`/preview-environments/${id}/status`, { status, url }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["preview-environments"] }),
+  });
+}
+
+export function useCleanupPreviewEnvironment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/preview-environments/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["preview-environments"] }),
+  });
+}
+
+// ─── Deployment Insights ──────────────────────────────────────────────────────
+
+export interface DailyDeployStatDto {
+  date: string;
+  total: number;
+  succeeded: number;
+  failed: number;
+  avgDurationSeconds: number;
+}
+
+export interface DeploymentInsightsDto {
+  totalDeploys: number;
+  successCount: number;
+  failedCount: number;
+  successRate: number;
+  avgDurationSeconds: number;
+  fastestDeploy: number;
+  slowestDeploy: number;
+  dailyStats: DailyDeployStatDto[];
+  failuresByProject: Record<string, number>;
+  deploysByTrigger: Record<string, number>;
+  periodLabel: string;
+}
+
+export interface ErrorSuggestionDto {
+  category: string;
+  title: string;
+  description: string;
+  fix: string;
+  severity: string;
+}
+
+export function useDeploymentInsights(period = "30d") {
+  return useQuery({
+    queryKey: ["deployment-insights", period],
+    queryFn: () =>
+      apiClient.get<DeploymentInsightsDto>("/insights/deployments", {
+        params: { period },
+      }),
+    staleTime: 60_000,
+  });
+}
+
+export function useDeploymentErrors(deploymentId: string | null) {
+  return useQuery({
+    queryKey: ["deployment-errors", deploymentId],
+    queryFn: () =>
+      apiClient.get<ErrorSuggestionDto[]>(`/insights/deployments/${deploymentId}/errors`),
+    enabled: !!deploymentId,
+    staleTime: 300_000,
+  });
+}
+
+// ─── Outbound Webhooks ────────────────────────────────────────────────────────
+
+export interface OutboundWebhookDto {
+  id: string;
+  name: string;
+  url: string;
+  events: string;
+  isEnabled: boolean;
+  projectId?: string;
+  deliveryCount: number;
+  failureCount: number;
+  lastDeliveredAt?: string;
+  lastResponseStatus?: string;
+}
+
+export function useOutboundWebhooks(projectId?: string) {
+  return useQuery({
+    queryKey: ["outbound-webhooks", projectId],
+    queryFn: () =>
+      apiClient.get<OutboundWebhookDto[]>("/insights/webhooks", {
+        params: projectId ? { projectId } : undefined,
+      }),
+    staleTime: 60_000,
+  });
+}
+
+export function useCreateOutboundWebhook() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      name: string;
+      url: string;
+      events: string;
+      secret?: string;
+      projectId?: string;
+    }) => apiClient.post<OutboundWebhookDto>("/insights/webhooks", data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["outbound-webhooks"] }),
+  });
+}
+
+export function useDeleteOutboundWebhook() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/insights/webhooks/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["outbound-webhooks"] }),
+  });
+}
+
+export function useTestOutboundWebhook() {
+  return useMutation({
+    mutationFn: (id: string) => apiClient.post<string>(`/insights/webhooks/${id}/test`),
+  });
+}
+

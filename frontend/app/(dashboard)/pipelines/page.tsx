@@ -158,6 +158,11 @@ function PipelineCard({ pipeline, onTrigger, runPending }: { pipeline: Pipeline;
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
+                    <Link href={`/pipelines/${pipeline.id}/builder`}>
+                      <GitBranch className="mr-2 w-4 h-4" />Edit Stages
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
                     <Link href={`/pipelines/${pipeline.id}/edit`}>
                       <Settings className="mr-2 w-4 h-4" />Edit
                     </Link>

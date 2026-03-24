@@ -49,7 +49,8 @@ public class DeploymentRunnerService : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in DeploymentRunner loop");
-                await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken).ConfigureAwait(false);
+                try { await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken); }
+                catch (OperationCanceledException) { break; }
             }
         }
     }

@@ -41,7 +41,8 @@ public class ServerHealthCheckService : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in ServerHealthCheckService");
-                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken).ConfigureAwait(false);
+                try { await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); }
+                catch (OperationCanceledException) { break; }
             }
         }
     }
@@ -196,7 +197,8 @@ public class AlertEvaluatorService : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in AlertEvaluatorService");
-                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken).ConfigureAwait(false);
+                try { await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); }
+                catch (OperationCanceledException) { break; }
             }
         }
     }
@@ -295,7 +297,8 @@ public class ContainerMetricsCollectorService : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in ContainerMetricsCollectorService");
-                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken).ConfigureAwait(false);
+                try { await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); }
+                catch (OperationCanceledException) { break; }
             }
         }
     }
@@ -344,5 +347,197 @@ public class ContainerMetricsCollectorService : BackgroundService
         }
 
         await db.SaveChangesAsync(ct);
+    }
+}
+
+/// <summary>
+/// Monitors server/container health and automatically applies configured recovery rules.
+/// Runs every 2 minutes. Supports: restart container, redeploy last-good build, alert-only, scale-up.
+/// </summary>
+public class ServerAutoRecoveryService : BackgroundService
+{
+    private readonly IServiceProvider _services;
+    private readonly ILogger<ServerAutoRecoveryService> _logger;
+
+    public ServerAutoRecoveryService(IServiceProvider services, ILogger<ServerAutoRecoveryService> logger)
+    {
+        _services = services;
+        _logger = logger;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("ServerAutoRecoveryService started.");
+        try
+        {
+            // stagger slightly to avoid thundering herd with other background services
+            await Task.Delay(TimeSpan.FromSeconds(45), stoppingToken);
+        }
+        catch (OperationCanceledException) { return; }
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await RunRecoveryPassAsync(stoppingToken);
+                await Task.Delay(TimeSpan.FromMinutes(2), stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in ServerAutoRecoveryService");
+                try { await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); }
+                catch (OperationCanceledException) { break; }
+            }
+        }
+    }
+
+    private async Task RunRecoveryPassAsync(CancellationToken ct)
+    {
+        using var scope = _services.CreateScope();
+        var db     = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var docker = scope.ServiceProvider.GetRequiredService<IDockerService>();
+        var logger = _logger;
+
+        // 1. Find servers that have been offline for > 5 minutes
+        var staleOfflineThreshold = DateTime.UtcNow.AddMinutes(-5);
+        var offlineServers = await db.Servers
+            .Where(s => !s.IsDeleted && s.Status == ServerStatus.Offline && s.UpdatedAt < staleOfflineThreshold)
+            .ToListAsync(ct);
+
+        // 2. Find recovery rules that are enabled
+        var recoveryRules = await db.RecoveryRules
+            .Where(r => !r.IsDeleted && r.IsEnabled)
+            .ToListAsync(ct);
+
+        foreach (var server in offlineServers)
+        {
+            var applicableRules = recoveryRules.Where(r =>
+                r.TargetServerId == null || r.TargetServerId == server.Id).ToList();
+
+            foreach (var rule in applicableRules.Where(r =>
+                r.Trigger == RecoveryTrigger.ServerOffline && r.RetryCount < r.MaxRetries))
+            {
+                // Enforce per-rule cooldown
+                if (rule.LastTriggeredAt.HasValue &&
+                    (DateTime.UtcNow - rule.LastTriggeredAt.Value).TotalSeconds < rule.CooldownSeconds)
+                    continue;
+
+                logger.LogWarning(
+                    "Auto-recovery triggered for server {Server} — rule '{Rule}' action={Action}",
+                    server.Name, rule.Name, rule.Action);
+
+                rule.LastTriggeredAt = DateTime.UtcNow;
+                rule.RetryCount++;
+
+                switch (rule.Action)
+                {
+                    case RecoveryAction.RestartContainer:
+                        // Restart all containers on the server (best-effort; server may be unreachable)
+                        await TryRestartServerContainersAsync(db, docker, server, ct);
+                        break;
+
+                    case RecoveryAction.RedeployLastGood:
+                        await TryRequeueLastGoodDeploymentAsync(db, server, ct);
+                        break;
+
+                    case RecoveryAction.ScaleUp:
+                        // Scale-up: mark server for re-provisioning by cloning its spec
+                        logger.LogInformation("Scale-up recovery action not yet implemented for server {Id}", server.Id);
+                        break;
+
+                    case RecoveryAction.AlertOnly:
+                        logger.LogWarning("AlertOnly recovery: server {Name} has been offline since {Since}",
+                            server.Name, server.UpdatedAt);
+                        break;
+                }
+            }
+        }
+
+        // 3. Handle crashed containers by looking at recent failed deployments
+        var recentFailedDeploys = await db.Deployments
+            .Where(d => !d.IsDeleted
+                && d.Status == DeploymentStatus.Failed
+                && d.CreatedAt > DateTime.UtcNow.AddMinutes(-10))
+            .ToListAsync(ct);
+
+        foreach (var failedDeploy in recentFailedDeploys)
+        {
+            var applicableRules = recoveryRules.Where(r =>
+                r.Trigger == RecoveryTrigger.DeploymentFailed &&
+                (r.TargetProjectId == null || r.TargetProjectId == failedDeploy.ProjectId) &&
+                r.RetryCount < r.MaxRetries).ToList();
+
+            foreach (var rule in applicableRules)
+            {
+                if (rule.LastTriggeredAt.HasValue &&
+                    (DateTime.UtcNow - rule.LastTriggeredAt.Value).TotalSeconds < rule.CooldownSeconds)
+                    continue;
+
+                rule.LastTriggeredAt = DateTime.UtcNow;
+                rule.RetryCount++;
+
+                logger.LogWarning(
+                    "DeploymentFailed recovery for deployment {Id} — rule '{Rule}'",
+                    failedDeploy.Id, rule.Name);
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task TryRestartServerContainersAsync(
+        ApplicationDbContext db, IDockerService docker, Server server, CancellationToken ct)
+    {
+        // Find project IDs that have deployments on this server
+        var projectIds = await db.Deployments
+            .Where(d => !d.IsDeleted && d.ServerId == server.Id)
+            .Select(d => d.ProjectId)
+            .Distinct()
+            .ToListAsync(ct);
+
+        // List containers for those projects
+        var services = await db.Services
+            .Where(s => !s.IsDeleted && projectIds.Contains(s.ProjectId) && s.ContainerId != null)
+            .ToListAsync(ct);
+
+        foreach (var svc in services)
+        {
+            try
+            {
+                await docker.RestartContainerAsync(server.Id.ToString(), svc.ContainerId!, ct);
+            }
+            catch
+            {
+                // Best-effort; container or server may be unreachable
+            }
+        }
+    }
+
+    private static async Task TryRequeueLastGoodDeploymentAsync(
+        ApplicationDbContext db, Server server, CancellationToken ct)
+    {
+        // Find the last successful deployment per project on this server and re-queue it
+        var lastGoodDeploys = await db.Deployments
+            .Where(d => !d.IsDeleted && d.ServerId == server.Id && d.Status == DeploymentStatus.Healthy)
+            .GroupBy(d => d.ProjectId)
+            .Select(g => g.OrderByDescending(d => d.CreatedAt).First())
+            .ToListAsync(ct);
+
+        foreach (var deploy in lastGoodDeploys)
+        {
+            var requeue = Deployment.Create(
+                deploy.TenantId,
+                deploy.ProjectId,
+                trigger: DeploymentTrigger.Manual,
+                branch: deploy.Branch,
+                commitSha: deploy.CommitSha,
+                commitMessage: "Auto-recovery: re-deploy last healthy build",
+                serverId: deploy.ServerId);
+            db.Deployments.Add(requeue);
+        }
     }
 }

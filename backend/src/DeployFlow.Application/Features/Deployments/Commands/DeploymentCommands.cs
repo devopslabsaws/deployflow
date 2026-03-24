@@ -146,6 +146,136 @@ public class RollbackDeploymentCommandHandler : IRequestHandler<RollbackDeployme
     }
 }
 
+// ─── Approve Deployment ───────────────────────────────────────────────────────
+
+public record ApproveDeploymentCommand(Guid Id, string? Notes) : IRequest<Result>;
+
+public class ApproveDeploymentCommandHandler : IRequestHandler<ApproveDeploymentCommand, Result>
+{
+    private readonly IUnitOfWork _uow;
+    private readonly ICurrentUser _currentUser;
+
+    public ApproveDeploymentCommandHandler(IUnitOfWork uow, ICurrentUser currentUser)
+    { _uow = uow; _currentUser = currentUser; }
+
+    public async Task<Result> Handle(ApproveDeploymentCommand request, CancellationToken ct)
+    {
+        var deployment = await _uow.Deployments.GetByIdAsync(request.Id, ct);
+        if (deployment is null || deployment.TenantId != _currentUser.TenantId)
+            return Result.Failure("Deployment not found.", 404);
+
+        try { deployment.Approve(_currentUser.UserId, request.Notes); }
+        catch (InvalidOperationException ex) { return Result.Failure(ex.Message); }
+
+        await _uow.SaveChangesAsync(ct);
+        return Result.Success();
+    }
+}
+
+// ─── Reject Deployment ────────────────────────────────────────────────────────
+
+public record RejectDeploymentCommand(Guid Id, string? Notes) : IRequest<Result>;
+
+public class RejectDeploymentCommandHandler : IRequestHandler<RejectDeploymentCommand, Result>
+{
+    private readonly IUnitOfWork _uow;
+    private readonly ICurrentUser _currentUser;
+
+    public RejectDeploymentCommandHandler(IUnitOfWork uow, ICurrentUser currentUser)
+    { _uow = uow; _currentUser = currentUser; }
+
+    public async Task<Result> Handle(RejectDeploymentCommand request, CancellationToken ct)
+    {
+        var deployment = await _uow.Deployments.GetByIdAsync(request.Id, ct);
+        if (deployment is null || deployment.TenantId != _currentUser.TenantId)
+            return Result.Failure("Deployment not found.", 404);
+
+        try { deployment.Reject(_currentUser.UserId, request.Notes); }
+        catch (InvalidOperationException ex) { return Result.Failure(ex.Message); }
+
+        await _uow.SaveChangesAsync(ct);
+        return Result.Success();
+    }
+}
+
+// ─── Start Canary ─────────────────────────────────────────────────────────────
+
+public record StartCanaryCommand(Guid Id, int TrafficPercent, int StepDurationMinutes) : IRequest<Result>;
+
+public class StartCanaryCommandHandler : IRequestHandler<StartCanaryCommand, Result>
+{
+    private readonly IUnitOfWork _uow;
+    private readonly ICurrentUser _currentUser;
+
+    public StartCanaryCommandHandler(IUnitOfWork uow, ICurrentUser currentUser)
+    { _uow = uow; _currentUser = currentUser; }
+
+    public async Task<Result> Handle(StartCanaryCommand request, CancellationToken ct)
+    {
+        var deployment = await _uow.Deployments.GetByIdAsync(request.Id, ct);
+        if (deployment is null || deployment.TenantId != _currentUser.TenantId)
+            return Result.Failure("Deployment not found.", 404);
+
+        try { deployment.StartCanary(request.TrafficPercent, request.StepDurationMinutes); }
+        catch (InvalidOperationException ex) { return Result.Failure(ex.Message); }
+
+        await _uow.SaveChangesAsync(ct);
+        return Result.Success();
+    }
+}
+
+// ─── Promote Canary ───────────────────────────────────────────────────────────
+
+public record PromoteCanaryCommand(Guid Id) : IRequest<Result>;
+
+public class PromoteCanaryCommandHandler : IRequestHandler<PromoteCanaryCommand, Result>
+{
+    private readonly IUnitOfWork _uow;
+    private readonly ICurrentUser _currentUser;
+
+    public PromoteCanaryCommandHandler(IUnitOfWork uow, ICurrentUser currentUser)
+    { _uow = uow; _currentUser = currentUser; }
+
+    public async Task<Result> Handle(PromoteCanaryCommand request, CancellationToken ct)
+    {
+        var deployment = await _uow.Deployments.GetByIdAsync(request.Id, ct);
+        if (deployment is null || deployment.TenantId != _currentUser.TenantId)
+            return Result.Failure("Deployment not found.", 404);
+
+        try { deployment.PromoteCanary(); }
+        catch (InvalidOperationException ex) { return Result.Failure(ex.Message); }
+
+        await _uow.SaveChangesAsync(ct);
+        return Result.Success();
+    }
+}
+
+// ─── Abort Canary ─────────────────────────────────────────────────────────────
+
+public record AbortCanaryCommand(Guid Id) : IRequest<Result>;
+
+public class AbortCanaryCommandHandler : IRequestHandler<AbortCanaryCommand, Result>
+{
+    private readonly IUnitOfWork _uow;
+    private readonly ICurrentUser _currentUser;
+
+    public AbortCanaryCommandHandler(IUnitOfWork uow, ICurrentUser currentUser)
+    { _uow = uow; _currentUser = currentUser; }
+
+    public async Task<Result> Handle(AbortCanaryCommand request, CancellationToken ct)
+    {
+        var deployment = await _uow.Deployments.GetByIdAsync(request.Id, ct);
+        if (deployment is null || deployment.TenantId != _currentUser.TenantId)
+            return Result.Failure("Deployment not found.", 404);
+
+        try { deployment.AbortCanary(); }
+        catch (InvalidOperationException ex) { return Result.Failure(ex.Message); }
+
+        await _uow.SaveChangesAsync(ct);
+        return Result.Success();
+    }
+}
+
 // ─── Blue/Green Deploy Command ────────────────────────────────────────────────
 
 /// <summary>

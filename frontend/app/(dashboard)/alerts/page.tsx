@@ -52,7 +52,17 @@ export default function AlertsPage() {
   const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<AlertRule | null>(null);
   const [ruleErrors, setRuleErrors] = useState<Partial<Record<"name" | "metric" | "threshold" | "windowMinutes" | "cooldownMinutes", string>>>({});
-  const [ruleForm, setRuleForm] = useState({
+  const [ruleForm, setRuleForm] = useState<{
+    name: string;
+    metric: string;
+    operator: AlertRule["operator"];
+    threshold: number;
+    windowMinutes: number;
+    severity: AlertRule["severity"];
+    isEnabled: boolean;
+    cooldownMinutes: number;
+    description: string;
+  }>({
     name: "",
     metric: "cpu.usage",
     operator: ">",
@@ -387,7 +397,7 @@ export default function AlertsPage() {
               </div>
               <div className="space-y-1.5">
                 <Label>Operator</Label>
-                <Select value={ruleForm.operator} onValueChange={(v) => setRuleForm((s) => ({ ...s, operator: v }))}>
+                <Select value={ruleForm.operator} onValueChange={(v) => setRuleForm((s) => ({ ...s, operator: v as AlertRule["operator"] }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value=">">&gt;</SelectItem>
@@ -447,7 +457,7 @@ export default function AlertsPage() {
             </div>
             <div className="space-y-1.5">
               <Label>Severity</Label>
-              <Select value={ruleForm.severity} onValueChange={(v) => setRuleForm((s) => ({ ...s, severity: v }))}>
+              <Select value={ruleForm.severity} onValueChange={(v) => setRuleForm((s) => ({ ...s, severity: v as AlertRule["severity"] }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="critical">Critical</SelectItem>

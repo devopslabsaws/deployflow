@@ -167,6 +167,61 @@ public class PipelinesController : BaseController
 
         return Ok(runs);
     }
+
+    [HttpPut("{id:guid}/stages")]
+    public async Task<IActionResult> UpdateStages(
+        Guid id,
+        [FromBody] List<UpdateStageRequest> stages,
+        CancellationToken ct = default)
+    {
+        var pipeline = await _db.Pipelines
+            .Include(p => p.Stages)
+            .ThenInclude(s => s.Steps)
+            .FirstOrDefaultAsync(p => p.Id == id && p.TenantId == _currentUser.TenantId, ct);
+
+        if (pipeline is null)
+            return NotFound(new { error = "Pipeline not found." });
+
+        // Remove existing steps and stages
+        _db.PipelineSteps.RemoveRange(pipeline.Stages.SelectMany(s => s.Steps));
+        _db.PipelineStages.RemoveRange(pipeline.Stages);
+
+        // Add new stages with steps
+        for (int i = 0; i < stages.Count; i++)
+        {
+            var req = stages[i];
+            var stage = new Domain.Entities.PipelineStage
+            {
+                PipelineId = pipeline.Id,
+                Name = req.Name,
+                Order = i,
+                RunParallel = req.RunParallel,
+            };
+            for (int j = 0; j < req.Steps.Count; j++)
+            {
+                var sr = req.Steps[j];
+                stage.Steps.Add(new Domain.Entities.PipelineStep
+                {
+                    Name = sr.Name,
+                    Type = Enum.TryParse<Domain.Entities.PipelineStepType>(sr.Type, true, out var t)
+                        ? t : Domain.Entities.PipelineStepType.Command,
+                    Command = sr.Command,
+                    Timeout = sr.Timeout,
+                });
+            }
+            _db.PipelineStages.Add(stage);
+        }
+
+        pipeline.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new
+        {
+            success = true,
+            stageCount = stages.Count,
+            stepCount = stages.Sum(s => s.Steps.Count),
+        });
+    }
 }
 
 public record CreatePipelineRequest(
@@ -184,3 +239,6 @@ public record UpdatePipelineRequest(
     string? CronExpression,
     bool IsEnabled
 );
+
+public record UpdateStepRequest(string Name, string Type, string? Command, int? Timeout);
+public record UpdateStageRequest(string Name, bool RunParallel, List<UpdateStepRequest> Steps);

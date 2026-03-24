@@ -141,6 +141,16 @@ export interface Deployment {
   isRollback: boolean;
   metadata?: Record<string, any>;
   errorMessage?: string;
+  // Approval
+  approvalStatus?: "NotRequired" | "Pending" | "Approved" | "Rejected";
+  approvedBy?: string;
+  approvedAt?: string;
+  approvalNotes?: string;
+  // Canary
+  canaryStatus?: "None" | "Running" | "Promoted" | "Aborted";
+  canaryTrafficPercent?: number;
+  canaryStepDurationMinutes?: number;
+  canaryStartedAt?: string;
 }
 
 // ============================================================
@@ -173,6 +183,8 @@ export interface Server {
   lastHealthCheckAt?: string;
   metrics?: ServerMetrics;
   sshKeyId?: ID;
+  isCordoned?: boolean;
+  isDraining?: boolean;
 }
 
 export interface ServerMetrics {

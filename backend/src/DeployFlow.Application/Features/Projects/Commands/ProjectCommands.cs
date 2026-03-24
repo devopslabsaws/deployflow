@@ -175,3 +175,58 @@ public class DeleteProjectCommandHandler : IRequestHandler<DeleteProjectCommand,
         return Result.Success();
     }
 }
+
+// ─── Clone Project ────────────────────────────────────────────────────────────
+
+public record CloneProjectCommand(Guid SourceId, string? NewName) : IRequest<Result<ProjectDto>>;
+
+public class CloneProjectCommandHandler : IRequestHandler<CloneProjectCommand, Result<ProjectDto>>
+{
+    private readonly IUnitOfWork _uow;
+    private readonly ICurrentUser _currentUser;
+    private readonly IMapper _mapper;
+
+    public CloneProjectCommandHandler(IUnitOfWork uow, ICurrentUser currentUser, IMapper mapper)
+    { _uow = uow; _currentUser = currentUser; _mapper = mapper; }
+
+    public async Task<Result<ProjectDto>> Handle(CloneProjectCommand request, CancellationToken ct)
+    {
+        var src = await _uow.Projects.GetByIdAsync(request.SourceId, ct);
+        if (src is null || src.TenantId != _currentUser.TenantId)
+            return Result<ProjectDto>.Failure("Source project not found.", 404);
+
+        var cloneName = !string.IsNullOrWhiteSpace(request.NewName)
+            ? request.NewName.Trim()
+            : $"{src.Name} (Clone)";
+
+        // Ensure the name is unique — append a timestamp if taken
+        var existing = await _uow.Projects.GetByNameAsync(cloneName, _currentUser.TenantId, ct);
+        if (existing is not null)
+            cloneName = $"{cloneName} {DateTime.UtcNow:HHmmss}";
+
+        var clone = Domain.Entities.Project.Create(
+            tenantId:          _currentUser.TenantId,
+            name:              cloneName,
+            description:       src.Description,
+            repositoryUrl:     src.RepositoryUrl,
+            repositoryBranch:  src.RepositoryBranch ?? "main",
+            buildCommand:      src.BuildCommand,
+            startCommand:      src.StartCommand,
+            installCommand:    src.InstallCommand,
+            dockerfilePath:    src.DockerfilePath,
+            framework:         src.Framework,
+            customDomain:      null,   // custom domain must be unique — not copied
+            autoDeployEnabled: src.AutoDeployEnabled,
+            tags:              src.Tags?.ToArray() ?? [],
+            createdBy:         _currentUser.UserId
+        );
+
+        if (src.ServerId.HasValue)
+            clone.AssignServer(src.ServerId.Value);
+
+        await _uow.Projects.AddAsync(clone, ct);
+        await _uow.SaveChangesAsync(ct);
+
+        return Result<ProjectDto>.Success(_mapper.Map<ProjectDto>(clone));
+    }
+}

@@ -28,13 +28,13 @@ builder.Host.UseSerilog();
 // ─── Application & Infrastructure Layers ──────────────────────────────────────
 builder.Services.AddApplicationLayer();
 builder.Services.AddInfrastructureLayer(builder.Configuration);
-builder.Services
-    .AddIdentityCore<ApplicationUser>(opts =>
-    {
-        opts.Password.RequireDigit = true;
-        opts.Password.RequiredLength = 8;
-    })
-    .AddEntityFrameworkStores<ApplicationDbContext>(); // replace with your actual DbContext type
+// NOTE: Identity (UserManager, RoleManager, stores, password options) is fully
+// registered inside AddInfrastructureLayer — do NOT call AddIdentityCore again.
+
+// Don't let a crashing background service take down the whole host.
+// Each service already catches OperationCanceledException internally.
+builder.Services.Configure<HostOptions>(opts =>
+    opts.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore);
 
 // ─── HttpContext ──────────────────────────────────────────────────────────────
 builder.Services.AddHttpContextAccessor();
@@ -77,13 +77,34 @@ builder.Services
 builder.Services.AddAuthorization();
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
+// In production, set AllowedOrigins in appsettings / environment variables.
+// In development, the frontend is proxied through Next.js so direct browser→API
+// calls are rare; but we allow all localhost ports so any `next dev --port N`
+// works without CORS failures (which surface as "Network Error" in the browser).
+var configuredOrigins = builder.Configuration["AllowedOrigins"]?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 builder.Services.AddCors(opts =>
     opts.AddPolicy("AllowFrontend", policy =>
-        policy
-            .WithOrigins(builder.Configuration["AllowedOrigins"]?.Split(',') ?? new[] { "http://localhost:3000" })
-            .AllowAnyMethod()
-            .AllowAnyHeader()
-            .AllowCredentials()));
+    {
+        if (configuredOrigins?.Length > 0)
+        {
+            policy.WithOrigins(configuredOrigins);
+        }
+        else if (builder.Environment.IsDevelopment())
+        {
+            // Allow any localhost port during local development.
+            policy.SetIsOriginAllowed(origin =>
+            {
+                if (Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+                    return uri.Host is "localhost" or "127.0.0.1";
+                return false;
+            });
+        }
+        else
+        {
+            policy.WithOrigins("http://localhost:3000");
+        }
+        policy.AllowAnyMethod().AllowAnyHeader().AllowCredentials();
+    }));
 
 // ─── Rate Limiting ────────────────────────────────────────────────────────────
 builder.Services.AddRateLimiter(opts =>

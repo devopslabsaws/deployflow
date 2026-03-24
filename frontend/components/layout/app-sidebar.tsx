@@ -6,6 +6,7 @@ import {
   LayoutDashboard, FolderOpen, Rocket, Server, ScrollText, GitBranch,
   Database, Activity, Settings, Bot, ChevronLeft, ChevronRight,
   Users, Shield, Bell, DollarSign, Globe, HardDrive, Layers, Zap, Package, Network, Cloud,
+  LayoutTemplate, Layers2, GitPullRequest, TrendingUp, Compass, Webhook,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -30,14 +31,21 @@ const navGroups: NavGroup[] = [
     items: [
       { label: "Dashboard",    href: "/dashboard",    icon: LayoutDashboard },
       { label: "AI Assistant", href: "/ai-assistant", icon: Bot, badge: "New", badgeColor: "bg-primary text-primary-foreground" },
+      { label: "Onboarding",   href: "/onboarding",   icon: Compass, badge: "Start", badgeColor: "bg-green-500 text-white" },
+      { label: "Insights",     href: "/insights",     icon: TrendingUp },
     ],
   },
   {
     label: "Applications",
     items: [
-      { label: "Projects",    href: "/projects",    icon: FolderOpen },
-      { label: "Deployments", href: "/deployments", icon: Rocket },
-      { label: "Services",    href: "/services",    icon: Package },
+      { label: "Projects",      href: "/projects",      icon: FolderOpen },
+      { label: "Deployments",   href: "/deployments",   icon: Rocket },
+      { label: "Services",      href: "/services",      icon: Package },
+      { label: "Templates",     href: "/templates",             icon: LayoutTemplate, badge: "New", badgeColor: "bg-primary text-primary-foreground" },
+      { label: "Environments",  href: "/environments",          icon: GitBranch },
+      { label: "Preview Envs",        href: "/preview-environments",  icon: GitPullRequest },
+      { label: "Outbound Webhooks",   href: "/outbound-webhooks",     icon: Webhook },
+      { label: "Compose",             href: "/compose",               icon: Layers2 },
     ],
   },
   {

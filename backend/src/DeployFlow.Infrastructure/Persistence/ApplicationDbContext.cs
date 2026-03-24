@@ -53,6 +53,13 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
     public DbSet<Volume> Volumes => Set<Volume>();
     public DbSet<PipelineRun> PipelineRuns => Set<PipelineRun>();
     public DbSet<PipelineRunLog> PipelineRunLogs => Set<PipelineRunLog>();
+    public DbSet<ProjectEnvironment> ProjectEnvironments => Set<ProjectEnvironment>();
+    public DbSet<ComposeStack> ComposeStacks => Set<ComposeStack>();
+    public DbSet<TraefikRouter> TraefikRouters => Set<TraefikRouter>();
+    public DbSet<ProvisioningJob> ProvisioningJobs => Set<ProvisioningJob>();
+    public DbSet<RecoveryRule> RecoveryRules => Set<RecoveryRule>();
+    public DbSet<PreviewEnvironment> PreviewEnvironments => Set<PreviewEnvironment>();
+    public DbSet<OutboundWebhookConfig> OutboundWebhookConfigs => Set<OutboundWebhookConfig>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

@@ -39,6 +39,13 @@ public interface IUnitOfWork : IDisposable
     IEnvVariableRepository EnvVariables { get; }
     INotificationConfigRepository NotificationConfigs { get; }
     IAlertRuleRepository AlertRules { get; }
+    ITenantRepository<ProjectEnvironment> Environments { get; }
+    ITenantRepository<ComposeStack> ComposeStacks { get; }
+    ITenantRepository<TraefikRouter> TraefikRouters { get; }
+    ITenantRepository<ProvisioningJob> ProvisioningJobs { get; }
+    ITenantRepository<RecoveryRule> RecoveryRules { get; }
+    ITenantRepository<PreviewEnvironment> PreviewEnvironments { get; }
+    ITenantRepository<OutboundWebhookConfig> OutboundWebhooks { get; }
 
     Task<int> SaveChangesAsync(CancellationToken ct = default);
     Task BeginTransactionAsync(CancellationToken ct = default);

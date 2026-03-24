@@ -3,7 +3,7 @@ using DeployFlow.Domain.Common;
 namespace DeployFlow.Domain.Entities;
 
 public enum ServiceStatus { Running, Stopped, Starting, Restarting, Error }
-public enum ServiceType { Web, Api, Worker, Cron, Database, Cache, Queue, Storage }
+public enum ServiceType { Web, Api, Worker, Cron, Database, Cache, Queue, Storage, Microservice, Fullstack, Static }
 
 public class Service : AggregateRoot
 {

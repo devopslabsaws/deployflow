@@ -5,19 +5,23 @@ import { motion } from "framer-motion";
 import {
   DollarSign, TrendingUp, TrendingDown, BarChart3, Calendar, Download,
   AlertTriangle, Lightbulb, Server, Database, Container,
+  Target, ArrowUp, ArrowDown, Minus, Settings2, ChevronRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { useCostDashboard } from "@/hooks/use-api";
+import { useCostDashboard, useCostBreakdown, useSetBudget } from "@/hooks/use-api";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, BarChart, Bar,
 } from "recharts";
+import { toast } from "sonner";
 
 const CATEGORY_COLORS: Record<string, string> = {
   compute:   "#4F46E5",
@@ -43,6 +47,28 @@ function getCategoryColor(cat: string) {
 export default function CostsPage() {
   const [period, setPeriod] = useState<string>("3m");
   const { data: dash, isLoading } = useCostDashboard(period);
+  const { data: breakdown, isLoading: breakdownLoading } = useCostBreakdown(period);
+  const setBudget = useSetBudget();
+
+  // Budget state
+  const [budgetInput, setBudgetInput] = useState("");
+  const [alertAt, setAlertAt] = useState("80");
+  const [budgetSaved, setBudgetSaved] = useState<number | null>(null);
+
+  const handleSaveBudget = async () => {
+    const amount = parseFloat(budgetInput);
+    if (!amount || amount <= 0) { toast.error("Enter a valid budget amount."); return; }
+    try {
+      await setBudget.mutateAsync({ monthlyBudget: amount, alertAt: parseFloat(alertAt) || 80 });
+      setBudgetSaved(amount);
+      toast.success("Budget saved successfully!");
+    } catch (e: any) {
+      toast.error("Failed to save budget", { description: e.message });
+    }
+  };
+
+  const effectiveBudget = budgetSaved ?? null;
+  const budgetUtilization = effectiveBudget ? ((dash?.currentMonthCost ?? 0) / effectiveBudget) * 100 : 0;
 
   const changeIsUp = (dash?.changePercent ?? 0) >= 0;
 
@@ -278,6 +304,112 @@ export default function CostsPage() {
                 </div>
               )
             }
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Budget + Resource Breakdown */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Budget Tracker */}
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2">
+            <Target className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Monthly Budget</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {effectiveBudget && (
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Utilization</span>
+                  <span className={`font-medium ${
+                    budgetUtilization > 90 ? "text-destructive" :
+                    budgetUtilization > 75 ? "text-amber-500" : "text-emerald-500"
+                  }`}>{budgetUtilization.toFixed(1)}%</span>
+                </div>
+                <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      budgetUtilization > 90 ? "bg-destructive" :
+                      budgetUtilization > 75 ? "bg-amber-500" : "bg-emerald-500"
+                    }`}
+                    style={{ width: `${Math.min(budgetUtilization, 100)}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>${(dash?.currentMonthCost ?? 0).toFixed(2)} spent</span>
+                  <span>${effectiveBudget.toFixed(2)} budget</span>
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="budget-amount" className="text-xs">Monthly Budget ($)</Label>
+                <Input
+                  id="budget-amount"
+                  type="number"
+                  placeholder="e.g. 500"
+                  value={budgetInput}
+                  onChange={e => setBudgetInput(e.target.value)}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="alert-at" className="text-xs">Alert at (%)</Label>
+                <Input
+                  id="alert-at"
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={alertAt}
+                  onChange={e => setAlertAt(e.target.value)}
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+            <Button
+              size="sm"
+              className="w-full gap-1.5"
+              onClick={handleSaveBudget}
+              disabled={setBudget.isPending}
+            >
+              <Target className="h-3.5 w-3.5" />
+              Save Budget
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Resource Breakdown Table */}
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Resource Breakdown</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {breakdownLoading ? (
+              <div className="space-y-2">{[1,2,3,4].map(i => <Skeleton key={i} className="h-10 w-full" />)}</div>
+            ) : !breakdown?.items.length ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">No breakdown data available</p>
+            ) : (
+              <div className="space-y-1">
+                {breakdown.items.map((item, i) => (
+                  <div key={i} className="flex items-center justify-between gap-3 py-2 border-b border-border/40 last:border-0">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{item.label}</p>
+                      <p className="text-xs text-muted-foreground capitalize">{item.category} · ${item.dailyAverage.toFixed(2)}/day</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {item.trend === "up" && <ArrowUp className="h-3.5 w-3.5 text-destructive" />}
+                      {item.trend === "down" && <ArrowDown className="h-3.5 w-3.5 text-emerald-500" />}
+                      {item.trend === "flat" && <Minus className="h-3.5 w-3.5 text-muted-foreground" />}
+                      <span className="text-sm font-medium w-16 text-right">${item.amount.toFixed(2)}</span>
+                      <Badge variant="secondary" className="text-[10px] px-1.5 w-12 justify-center">
+                        {item.percentage.toFixed(0)}%
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

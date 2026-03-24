@@ -79,6 +79,55 @@ public class DeploymentsController : BaseController
         return CreatedAtAction(nameof(GetById), new { id = result.Value!.Id }, result.Value);
     }
 
+    // ─── Approval ──────────────────────────────────────────────────────────────
+
+    /// <summary>Approve a pending deployment.</summary>
+    [HttpPost("{id:guid}/approve")]
+    [RequireResourcePermission(PermissionResource.Deployment, ResourceAction.Deploy)]
+    public async Task<IActionResult> Approve(Guid id, [FromBody] ApprovalRequest request, CancellationToken ct)
+    {
+        var result = await Mediator.Send(new ApproveDeploymentCommand(id, request.Notes), ct);
+        return ToResponse(result);
+    }
+
+    /// <summary>Reject a pending deployment.</summary>
+    [HttpPost("{id:guid}/reject")]
+    [RequireResourcePermission(PermissionResource.Deployment, ResourceAction.Deploy)]
+    public async Task<IActionResult> Reject(Guid id, [FromBody] ApprovalRequest request, CancellationToken ct)
+    {
+        var result = await Mediator.Send(new RejectDeploymentCommand(id, request.Notes), ct);
+        return ToResponse(result);
+    }
+
+    // ─── Canary ────────────────────────────────────────────────────────────────
+
+    /// <summary>Start a canary release for a healthy deployment.</summary>
+    [HttpPost("{id:guid}/canary/start")]
+    [RequireResourcePermission(PermissionResource.Deployment, ResourceAction.Deploy)]
+    public async Task<IActionResult> StartCanary(Guid id, [FromBody] StartCanaryRequest request, CancellationToken ct)
+    {
+        var result = await Mediator.Send(new StartCanaryCommand(id, request.TrafficPercent, request.StepDurationMinutes), ct);
+        return ToResponse(result);
+    }
+
+    /// <summary>Promote a running canary to 100% traffic.</summary>
+    [HttpPost("{id:guid}/canary/promote")]
+    [RequireResourcePermission(PermissionResource.Deployment, ResourceAction.Deploy)]
+    public async Task<IActionResult> PromoteCanary(Guid id, CancellationToken ct)
+    {
+        var result = await Mediator.Send(new PromoteCanaryCommand(id), ct);
+        return ToResponse(result);
+    }
+
+    /// <summary>Abort a running canary and roll back traffic.</summary>
+    [HttpPost("{id:guid}/canary/abort")]
+    [RequireResourcePermission(PermissionResource.Deployment, ResourceAction.Deploy)]
+    public async Task<IActionResult> AbortCanary(Guid id, CancellationToken ct)
+    {
+        var result = await Mediator.Send(new AbortCanaryCommand(id), ct);
+        return ToResponse(result);
+    }
+
     /// <summary>
     /// Trigger a zero-downtime Blue/Green deployment for a project.
     /// Deploys to the inactive slot, health-checks it, then switches traffic.
@@ -93,3 +142,5 @@ public class DeploymentsController : BaseController
 }
 
 public record BlueGreenDeployRequest(Guid ProjectId);
+public record ApprovalRequest(string? Notes);
+public record StartCanaryRequest(int TrafficPercent, int StepDurationMinutes = 10);

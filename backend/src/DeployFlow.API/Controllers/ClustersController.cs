@@ -88,6 +88,67 @@ public class ClustersController : BaseController
         await _clusters.RemoveNodeAsync(id, serverId, ct);
         return NoContent();
     }
+
+    // ── Node maintenance ──────────────────────────────────────────────────────
+
+    /// <summary>Cordon a node: prevent new deployments from being scheduled to it.</summary>
+    [HttpPost("{id:guid}/nodes/{serverId:guid}/cordon")]
+    public async Task<IActionResult> CordonNode(Guid id, Guid serverId, CancellationToken ct)
+    {
+        if (!_currentUser.Role.Equals("admin", StringComparison.OrdinalIgnoreCase))
+            return Forbid();
+        try
+        {
+            await _clusters.CordonNodeAsync(id, serverId, ct);
+            return Ok(new { message = "Node cordoned." });
+        }
+        catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    /// <summary>Uncordon a node: allow new deployments again.</summary>
+    [HttpPost("{id:guid}/nodes/{serverId:guid}/uncordon")]
+    public async Task<IActionResult> UncordonNode(Guid id, Guid serverId, CancellationToken ct)
+    {
+        if (!_currentUser.Role.Equals("admin", StringComparison.OrdinalIgnoreCase))
+            return Forbid();
+        try
+        {
+            await _clusters.UncordonNodeAsync(id, serverId, ct);
+            return Ok(new { message = "Node uncordoned." });
+        }
+        catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    /// <summary>Drain a node: cordon it and initiate workload migration.</summary>
+    [HttpPost("{id:guid}/nodes/{serverId:guid}/drain")]
+    public async Task<IActionResult> DrainNode(Guid id, Guid serverId, CancellationToken ct)
+    {
+        if (!_currentUser.Role.Equals("admin", StringComparison.OrdinalIgnoreCase))
+            return Forbid();
+        try
+        {
+            await _clusters.DrainNodeAsync(id, serverId, ct);
+            return Ok(new { message = "Node drain initiated." });
+        }
+        catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    /// <summary>Rebalance a cluster: reset routing state and re-evaluate healthy nodes.</summary>
+    [HttpPost("{id:guid}/rebalance")]
+    public async Task<IActionResult> Rebalance(Guid id, CancellationToken ct)
+    {
+        if (!_currentUser.Role.Equals("admin", StringComparison.OrdinalIgnoreCase))
+            return Forbid();
+        try
+        {
+            var result = await _clusters.RebalanceAsync(id, ct);
+            return Ok(result);
+        }
+        catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
+    }
 }
 
 public record CreateClusterRequest(string Name, string? Description, string Strategy = "RoundRobin");

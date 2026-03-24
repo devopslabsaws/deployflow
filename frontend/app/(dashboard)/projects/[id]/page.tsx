@@ -8,7 +8,7 @@ import {
   ArrowLeft, Rocket, Settings, GitBranch, ExternalLink,
   CheckCircle2, XCircle, AlertTriangle, Clock, RefreshCw,
   Globe, Code2, Server, Calendar, Activity, StopCircle, Tag,
-  Terminal, Play, Loader2, Webhook, CalendarClock,
+  Terminal, Play, Loader2, Webhook, CalendarClock, KeyRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -125,6 +125,11 @@ export default function ProjectDetailPage() {
           <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" asChild>
             <Link href={`/projects/${id}/webhooks`}>
               <Webhook className="h-3.5 w-3.5" />Webhooks
+            </Link>
+          </Button>
+          <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" asChild>
+            <Link href={`/projects/${id}/env-variables`}>
+              <KeyRound className="h-3.5 w-3.5" />Env Vars
             </Link>
           </Button>
           <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" asChild>

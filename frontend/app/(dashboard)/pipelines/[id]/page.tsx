@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Play, Square, RefreshCw, Clock, User, TerminalSquare } from "lucide-react";
+import { ArrowLeft, Layers, Play, Square, RefreshCw, Clock, User, TerminalSquare } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -108,6 +108,11 @@ export default function PipelineDetailsPage() {
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => Promise.all([refetchPipeline(), refetchRuns(), refetchLogs()])}>
             <RefreshCw className="mr-1.5 h-4 w-4" />Refresh
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/pipelines/${pipelineId}/builder`}>
+              <Layers className="mr-1.5 h-4 w-4" />Edit Stages
+            </Link>
           </Button>
           <Button size="sm" onClick={handleStartRun} disabled={startRun.isPending || pipeline.status === "running"}>
             <Play className="mr-1.5 h-4 w-4" />Run Pipeline

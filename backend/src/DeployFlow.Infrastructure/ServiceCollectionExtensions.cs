@@ -69,6 +69,20 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IEnvVariableRepository, EnvVariableRepository>();
         services.AddScoped<INotificationConfigRepository, NotificationConfigRepository>();
         services.AddScoped<IAlertRuleRepository, AlertRuleRepository>();
+        services.AddScoped<ITenantRepository<ProjectEnvironment>>(sp =>
+            new TenantRepository<ProjectEnvironment>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<ComposeStack>>(sp =>
+            new TenantRepository<ComposeStack>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<TraefikRouter>>(sp =>
+            new TenantRepository<TraefikRouter>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<ProvisioningJob>>(sp =>
+            new TenantRepository<ProvisioningJob>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<RecoveryRule>>(sp =>
+            new TenantRepository<RecoveryRule>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<PreviewEnvironment>>(sp =>
+            new TenantRepository<PreviewEnvironment>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<OutboundWebhookConfig>>(sp =>
+            new TenantRepository<OutboundWebhookConfig>(sp.GetRequiredService<ApplicationDbContext>()));
 
         // Unit of work
         services.AddScoped<IUnitOfWork, UnitOfWork>();
@@ -102,6 +116,7 @@ public static class ServiceCollectionExtensions
             services.AddHostedService<AlertEvaluatorService>();
             services.AddHostedService<ContainerMetricsCollectorService>();
             services.AddHostedService<CostCalculationService>();
+            services.AddHostedService<ServerAutoRecoveryService>();
         }
 
         return services;
@@ -155,6 +170,26 @@ public static class ServiceCollectionExtensions
             };
             await userManager.CreateAsync(admin, "Admin123!");
             await userManager.AddToRoleAsync(admin, "Admin");
+        }
+
+        // ── Dev / demo user ───────────────────────────────────────────────
+        // Pre-seeded so local development works without a separate registration step.
+        const string devEmail = "sudhakar046@gmail.com";
+        if (await userManager.FindByEmailAsync(devEmail) is null)
+        {
+            var devUser = new ApplicationUser
+            {
+                Id = Guid.Parse("20000000-0000-0000-0000-000000000002"),
+                UserName = devEmail,
+                Email = devEmail,
+                EmailConfirmed = true,
+                FullName = "Sudhakar",
+                Role = "Admin",
+                TenantId = tenantId,
+                IsActive = true,
+            };
+            await userManager.CreateAsync(devUser, "Pits@2020");
+            await userManager.AddToRoleAsync(devUser, "Admin");
         }
 
         // ── Servers ───────────────────────────────────────────────────────

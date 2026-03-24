@@ -17,7 +17,17 @@ public record DeploymentDto(
     TimeSpan? Duration,
     string? ErrorMessage,
     string? RollbackFromId,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    // Approval
+    string ApprovalStatus,
+    Guid? ApprovedBy,
+    DateTime? ApprovedAt,
+    string? ApprovalNotes,
+    // Canary
+    string CanaryStatus,
+    int CanaryTrafficPercent,
+    int CanaryStepDurationMinutes,
+    DateTime? CanaryStartedAt
 );
 
 public record DeploymentSummaryDto(

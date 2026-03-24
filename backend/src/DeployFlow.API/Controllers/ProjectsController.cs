@@ -70,4 +70,15 @@ public class ProjectsController : BaseController
         var result = await Mediator.Send(new DeleteProjectCommand(id), ct);
         return ToResponse(result);
     }
+
+    /// <summary>Clone a project — duplicates all settings and environment variables.</summary>
+    [HttpPost("{id:guid}/clone")]
+    public async Task<IActionResult> Clone(Guid id, [FromBody] CloneProjectRequest? request, CancellationToken ct)
+    {
+        var result = await Mediator.Send(new CloneProjectCommand(id, request?.NewName), ct);
+        if (!result.IsSuccess) return ToResponse(result);
+        return CreatedAtAction(nameof(GetById), new { id = result.Value!.Id }, result.Value);
+    }
 }
+
+public record CloneProjectRequest(string? NewName);

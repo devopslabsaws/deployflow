@@ -50,7 +50,15 @@ public class MappingProfile : Profile
                     ? s.FinishedAt.Value - s.StartedAt.Value : (TimeSpan?)null,
                 s.ErrorMessage,
                 s.PreviousDeploymentId.HasValue ? s.PreviousDeploymentId.ToString() : null,
-                s.CreatedAt))
+                s.CreatedAt,
+                s.ApprovalStatus.ToString(),
+                s.ApprovedBy,
+                s.ApprovedAt,
+                s.ApprovalNotes,
+                s.CanaryStatus.ToString(),
+                s.CanaryTrafficPercent,
+                s.CanaryStepDurationMinutes,
+                s.CanaryStartedAt))
             .ForAllMembers(o => o.Ignore());
 
         CreateMap<Deployment, DeploymentSummaryDto>()

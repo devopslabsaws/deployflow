@@ -8,7 +8,7 @@ import { z } from "zod";
 import Link from "next/link";
 import {
   ArrowLeft, Loader2, Trash2, GitBranch, Globe, Terminal,
-  Code2, Settings, AlertTriangle,
+  Code2, Settings, AlertTriangle, Sparkles, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,8 +18,9 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useProject, useDeleteProject } from "@/hooks/use-api";
+import { useProject, useDeleteProject, useDetectStack, useApplyStack, type DetectedStackDto } from "@/hooks/use-api";
 import { apiClient } from "@/lib/api-client";
+import { Badge } from "@/components/ui/badge";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/hooks/use-api";
 import { toast } from "sonner";
@@ -49,6 +50,14 @@ export default function ProjectSettingsPage() {
   const { data: project, isLoading } = useProject(id);
   const p = project as any;
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // Stack detection state
+  const [fileNames, setFileNames] = useState("");
+  const [packageJson, setPackageJson] = useState("");
+  const [detectedStack, setDetectedStack] = useState<DetectedStackDto | null>(null);
+  const [showDockerfile, setShowDockerfile] = useState(false);
+  const detectStack = useDetectStack();
+  const applyStack = useApplyStack(id);
 
   const deleteProject = useDeleteProject();
 
@@ -266,6 +275,144 @@ export default function ProjectSettingsPage() {
                 {...register("dockerfilePath")}
               />
             </div>
+          </CardContent>
+        </Card>
+
+        {/* ── Auto-Detect Stack ── */}
+        <Card className="glass-card border-primary/20">
+          <CardHeader className="pb-3 pt-4 px-4">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Sparkles className="h-3.5 w-3.5 text-primary" />Auto-Detect Stack
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Paste your repository file list and optionally package.json to auto-detect framework,
+              generate a Dockerfile, and pre-fill build commands.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Repository Files (one per line)</Label>
+              <Textarea
+                rows={4}
+                className="text-xs font-mono resize-none"
+                placeholder={"package.json\ntsconfig.json\nnext.config.mjs\nDockerfile"}
+                value={fileNames}
+                onChange={(e) => setFileNames(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">
+                package.json contents{" "}
+                <span className="text-muted-foreground font-normal">(optional)</span>
+              </Label>
+              <Textarea
+                rows={3}
+                className="text-xs font-mono resize-none"
+                placeholder='{"dependencies": {"next": "14.0.0"}}'
+                value={packageJson}
+                onChange={(e) => setPackageJson(e.target.value)}
+              />
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 gap-1.5 text-xs"
+              disabled={!fileNames.trim() || detectStack.isPending}
+              onClick={() => {
+                const files = fileNames.split("\n").map((f) => f.trim()).filter(Boolean);
+                detectStack.mutate(
+                  { fileNames: files, packageJsonContent: packageJson || undefined },
+                  {
+                    onSuccess: (data) => {
+                      setDetectedStack(data as DetectedStackDto);
+                      toast.success(`Detected: ${(data as any)?.framework}`);
+                    },
+                    onError: () => toast.error("Detection failed"),
+                  }
+                );
+              }}
+            >
+              {detectStack.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" />
+              )}
+              Detect Stack
+            </Button>
+
+            {detectedStack && (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <Badge className="text-xs">{detectedStack.framework}</Badge>
+                    <p className="text-xs text-muted-foreground">{detectedStack.explanation}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 text-xs gap-1"
+                    disabled={applyStack.isPending}
+                    onClick={() => {
+                      applyStack.mutate(
+                        {
+                          framework: detectedStack.framework,
+                          buildCommandOverride: detectedStack.buildCommand || undefined,
+                          startCommandOverride: detectedStack.startCommand || undefined,
+                          installCommandOverride: detectedStack.installCommand || undefined,
+                          portOverride: detectedStack.defaultPort || undefined,
+                        },
+                        {
+                          onSuccess: () => {
+                            toast.success("Stack applied — build commands updated");
+                            setValue("buildCommand", detectedStack.buildCommand, { shouldDirty: true });
+                            setValue("startCommand", detectedStack.startCommand, { shouldDirty: true });
+                            setValue("installCommand", detectedStack.installCommand, { shouldDirty: true });
+                          },
+                          onError: () => toast.error("Failed to apply"),
+                        }
+                      );
+                    }}
+                  >
+                    {applyStack.isPending ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : null}
+                    Apply
+                  </Button>
+                </div>
+                {detectedStack.suggestedEnvVars?.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium mb-1">Suggested env vars:</p>
+                    <div className="flex flex-wrap gap-1">
+                      {detectedStack.suggestedEnvVars.map((v) => (
+                        <Badge key={v} variant="secondary" className="text-xs font-mono px-1.5 py-0">
+                          {v}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowDockerfile((v) => !v)}
+                  >
+                    {showDockerfile ? (
+                      <ChevronUp className="h-3 w-3" />
+                    ) : (
+                      <ChevronDown className="h-3 w-3" />
+                    )}
+                    {showDockerfile ? "Hide" : "Show"} generated Dockerfile
+                  </button>
+                  {showDockerfile && (
+                    <pre className="mt-2 text-xs font-mono bg-muted rounded p-2 overflow-auto max-h-48 whitespace-pre">
+                      {detectedStack.dockerfileContent}
+                    </pre>
+                  )}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 

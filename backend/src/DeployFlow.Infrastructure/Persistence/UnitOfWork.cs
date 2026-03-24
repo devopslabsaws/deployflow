@@ -32,6 +32,13 @@ public class UnitOfWork : IUnitOfWork
     public IEnvVariableRepository EnvVariables { get; }
     public INotificationConfigRepository NotificationConfigs { get; }
     public IAlertRuleRepository AlertRules { get; }
+    public ITenantRepository<ProjectEnvironment> Environments { get; }
+    public ITenantRepository<ComposeStack> ComposeStacks { get; }
+    public ITenantRepository<TraefikRouter> TraefikRouters { get; }
+    public ITenantRepository<ProvisioningJob> ProvisioningJobs { get; }
+    public ITenantRepository<RecoveryRule> RecoveryRules { get; }
+    public ITenantRepository<PreviewEnvironment> PreviewEnvironments { get; }
+    public ITenantRepository<OutboundWebhookConfig> OutboundWebhooks { get; }
 
     public UnitOfWork(
         ApplicationDbContext db,
@@ -55,7 +62,14 @@ public class UnitOfWork : IUnitOfWork
         IDomainRepository domains,
         IEnvVariableRepository envVariables,
         INotificationConfigRepository notificationConfigs,
-        IAlertRuleRepository alertRules)
+        IAlertRuleRepository alertRules,
+        ITenantRepository<ProjectEnvironment> environments,
+        ITenantRepository<ComposeStack> composeStacks,
+        ITenantRepository<TraefikRouter> traefikRouters,
+        ITenantRepository<ProvisioningJob> provisioningJobs,
+        ITenantRepository<RecoveryRule> recoveryRules,
+        ITenantRepository<PreviewEnvironment> previewEnvironments,
+        ITenantRepository<OutboundWebhookConfig> outboundWebhooks)
     {
         _db = db;
         Projects = projects;
@@ -79,6 +93,13 @@ public class UnitOfWork : IUnitOfWork
         EnvVariables = envVariables;
         NotificationConfigs = notificationConfigs;
         AlertRules = alertRules;
+        Environments = environments;
+        ComposeStacks = composeStacks;
+        TraefikRouters = traefikRouters;
+        ProvisioningJobs = provisioningJobs;
+        RecoveryRules = recoveryRules;
+        PreviewEnvironments = previewEnvironments;
+        OutboundWebhooks = outboundWebhooks;
     }
 
     public Task<int> SaveChangesAsync(CancellationToken ct = default)

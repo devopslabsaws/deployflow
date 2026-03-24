@@ -201,4 +201,38 @@ public class Server : AggregateRoot
         CloudflareTunnelManual = manual;
         Touch();
     }
+
+    // ── Cluster node cordon/drain ─────────────────────────────────────────────
+
+    /// <summary>
+    /// When true, the node will not receive new deployments (cordoned).
+    /// Existing workloads remain running.
+    /// </summary>
+    public bool IsCordoned { get; private set; } = false;
+
+    /// <summary>
+    /// When true, the node is actively draining — all workloads are being
+    /// migrated and no new deployments are accepted.
+    /// </summary>
+    public bool IsDraining { get; private set; } = false;
+
+    public void Cordon()
+    {
+        IsCordoned = true;
+        Touch();
+    }
+
+    public void Uncordon()
+    {
+        IsCordoned = false;
+        IsDraining = false;
+        Touch();
+    }
+
+    public void Drain()
+    {
+        IsCordoned = true;
+        IsDraining = true;
+        Touch();
+    }
 }

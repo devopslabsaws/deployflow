@@ -35,8 +35,13 @@ public class CostCalculationService : BackgroundService
         _logger.LogInformation("CostCalculationService started.");
 
         // Seed historical data once on startup; then run hourly.
-        await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken); // let migrations finish
-        await SeedHistoricalDataIfEmptyAsync(stoppingToken);
+        // Wrap startup awaits — cancellation during startup is normal (e.g. hot-reload).
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken); // let migrations finish
+            await SeedHistoricalDataIfEmptyAsync(stoppingToken);
+        }
+        catch (OperationCanceledException) { return; }
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -52,7 +57,8 @@ public class CostCalculationService : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in CostCalculationService");
-                await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken).ConfigureAwait(false);
+                try { await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken); }
+                catch (OperationCanceledException) { break; }
             }
         }
     }

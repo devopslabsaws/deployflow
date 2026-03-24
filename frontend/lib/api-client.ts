@@ -98,14 +98,31 @@ class ApiClient {
               originalRequest.headers.Authorization = `Bearer ${accessToken}`;
               return this.instance(originalRequest);
             }
-          } catch {
-            clearCachedTokens();
-            localStorage.removeItem("deployflow-auth");
-            window.location.href = "/login";
+          } catch (refreshError: any) {
+            // Only clear auth and redirect if the refresh endpoint actually responded
+            // with an error (not a network failure). A network failure during refresh
+            // should not log the user out — the server may just be temporarily down.
+            const isNetworkFailure = !refreshError?.response;
+            if (!isNetworkFailure) {
+              clearCachedTokens();
+              localStorage.removeItem("deployflow-auth");
+              window.location.href = "/login";
+            }
           }
         }
 
         const errorData = error.response?.data as any;
+
+        // Network-level failure (backend unreachable, CORS preflight blocked, etc.)
+        // error.response is undefined — no HTTP response was ever received.
+        if (!error.response) {
+          const isTimeout = error.code === "ECONNABORTED";
+          const message = isTimeout
+            ? "Request timed out. The server is taking too long to respond — check that the backend is running."
+            : "Unable to reach the server. The backend may be starting up or offline. Please wait a moment and try again.";
+          return Promise.reject(new Error(message));
+        }
+
         const message =
           errorData?.error ||
           errorData?.message ||

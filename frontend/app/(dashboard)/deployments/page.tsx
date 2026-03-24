@@ -16,11 +16,14 @@ import {
   RotateCcw,
   XCircle,
   Eye,
+  Plus,
+  GitBranch,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -42,11 +45,20 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { DeploymentStatusBadge } from "@/components/deployments/deployment-status-badge";
 import {
   useDeployments,
   useCancelDeployment,
   useRollbackDeployment,
+  useCreateDeployment,
+  useProjects,
 } from "@/hooks/use-api";
 import { formatRelativeTime, formatDuration, truncate } from "@/lib/utils";
 import { toast } from "sonner";
@@ -67,14 +79,40 @@ export default function DeploymentsPage() {
   const [page, setPage] = useState(1);
   const pageSize = 15;
 
+  // Deploy dialog state
+  const [deployOpen, setDeployOpen] = useState(false);
+  const [deployProjectId, setDeployProjectId] = useState("");
+  const [deployBranch, setDeployBranch] = useState("");
+
   const { data, isLoading, refetch } = useDeployments({
     status: statusFilter === "all" ? undefined : statusFilter,
     page,
     pageSize,
   });
 
+  const { data: projectsData } = useProjects();
+  const projects = projectsData?.data ?? [];
+
   const cancelDeployment = useCancelDeployment();
   const rollbackDeployment = useRollbackDeployment();
+  const createDeployment = useCreateDeployment();
+
+  const handleDeploy = async () => {
+    if (!deployProjectId) { toast.error("Please select a project."); return; }
+    try {
+      await createDeployment.mutateAsync({
+        projectId: deployProjectId,
+        branch: deployBranch.trim() || undefined,
+      });
+      toast.success("Deployment triggered successfully!");
+      setDeployOpen(false);
+      setDeployProjectId("");
+      setDeployBranch("");
+      refetch();
+    } catch (e: any) {
+      toast.error("Deployment failed", { description: e.message });
+    }
+  };
 
   const handleCancel = async (id: string) => {
     try {
@@ -103,10 +141,16 @@ export default function DeploymentsPage() {
             {data?.total ?? 0} total deployments
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5">
-          <RefreshCw className="w-3.5 h-3.5" />
-          Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5">
+            <RefreshCw className="w-3.5 h-3.5" />
+            Refresh
+          </Button>
+          <Button size="sm" className="gap-1.5" onClick={() => setDeployOpen(true)}>
+            <Plus className="w-3.5 h-3.5" />
+            Deploy
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -296,6 +340,58 @@ export default function DeploymentsPage() {
           </div>
         )}
       </div>
+      {/* Deploy Dialog */}
+      <Dialog open={deployOpen} onOpenChange={setDeployOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Rocket className="h-5 w-5" />
+              New Deployment
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="deploy-project">Project</Label>
+              <Select value={deployProjectId} onValueChange={setDeployProjectId}>
+                <SelectTrigger id="deploy-project">
+                  <SelectValue placeholder="Select a project…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.filter(p => p.status === "active").map(p => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="deploy-branch" className="flex items-center gap-1.5">
+                <GitBranch className="h-3.5 w-3.5" />
+                Branch
+                <span className="text-muted-foreground font-normal">(optional — uses project default)</span>
+              </Label>
+              <Input
+                id="deploy-branch"
+                placeholder="e.g. main, develop, feature/xyz"
+                value={deployBranch}
+                onChange={e => setDeployBranch(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeployOpen(false)}>Cancel</Button>
+            <Button
+              onClick={handleDeploy}
+              disabled={!deployProjectId || createDeployment.isPending}
+              className="gap-1.5"
+            >
+              {createDeployment.isPending
+                ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                : <Rocket className="h-3.5 w-3.5" />}
+              Deploy
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
