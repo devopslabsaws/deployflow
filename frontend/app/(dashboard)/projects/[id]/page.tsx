@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Rocket, Settings, GitBranch, ExternalLink,
   CheckCircle2, XCircle, AlertTriangle, Clock, RefreshCw,
@@ -15,15 +15,15 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { useProject, useDeployments, useCancelDeployment, queryKeys } from "@/hooks/use-api";
+import { useProject, useDeployments, useCancelDeployment, useTriggerBuild, useBuildStatus, queryKeys } from "@/hooks/use-api";
 import { useActionFeedback } from "@/hooks/use-action-feedback";
-import { apiClient } from "@/lib/api-client";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
+  const router = useRouter();
   const qc = useQueryClient();
 
   const { data: project, isLoading: projectLoading } = useProject(id);
@@ -34,18 +34,20 @@ export default function ProjectDetailPage() {
   const deployments: any[] = (deploymentsData as any)?.data ?? [];
 
   const cancelDeploy = useCancelDeployment();
+  const triggerBuild = useTriggerBuild(id);
 
-  const triggerDeploy = useMutation({
-    mutationFn: () =>
-      apiClient.post("/deployments", { projectId: id, trigger: "manual" }),
-    onSuccess: () => {
-      toast.success("Deployment triggered!");
-      qc.invalidateQueries({ queryKey: queryKeys.deployments.all });
-      qc.invalidateQueries({ queryKey: queryKeys.projects.detail(id) });
+  // Track latest deployment for live build-status polling
+  const latestDeploymentId = deployments[0]?.id ?? null;
+  const { data: buildStatus } = useBuildStatus(latestDeploymentId);
+
+  const triggerDeploy = {
+    mutateAsync: async () => {
+      const result = await triggerBuild.mutateAsync({});
+      router.push(`/deployments/${result.deploymentId}`);
+      return result;
     },
-    onError: (e: any) =>
-      toast.error("Failed to trigger deployment", { description: e.message }),
-  });
+    isPending: triggerBuild.isPending,
+  };
 
   const deployFeedback = useActionFeedback(
     () => triggerDeploy.mutateAsync(),
@@ -158,6 +160,21 @@ export default function ProjectDetailPage() {
           </Button>
         </div>
       </div>
+
+      {/* ── Live app URL banner (when latest deployment has a url) ── */}
+      {buildStatus?.url && (
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-2.5">
+          <div className="min-w-0 flex items-center gap-2">
+            <Globe className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+            <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400 truncate">{buildStatus.url}</span>
+          </div>
+          <a href={buildStatus.url} target="_blank" rel="noopener noreferrer" className="shrink-0">
+            <Button size="sm" className="h-7 gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white">
+              <ExternalLink className="h-3 w-3" />Open App
+            </Button>
+          </a>
+        </div>
+      )}
 
       {/* ── Stats Row ────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -411,6 +428,20 @@ function DeploymentRow({
         )}
       </div>
       <div className="flex items-center gap-2 shrink-0">
+        {d.url && (d.status === "healthy" || d.status === "running" || d.status === "succeeded") && (
+          <a
+            href={d.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            title={d.url}
+          >
+            <Button size="sm" variant="ghost" className="h-7 gap-1 text-[10px] text-emerald-500 hover:text-emerald-400 px-2">
+              <ExternalLink className="h-3 w-3" />
+              Open
+            </Button>
+          </a>
+        )}
         {d.startedAt && (
           <span className="text-[11px] text-muted-foreground hidden sm:block">
             {formatRelativeTime(d.startedAt)}

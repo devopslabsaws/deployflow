@@ -165,8 +165,8 @@ export default function ServerSettingsPage({ params }: { params: { id: string } 
 
   const handleRecheck = async () => {
     try {
-      await apiClient.post(`/servers/${id}/health-check`, {});
-      toast.success("Health check triggered.");
+      await apiClient.post(`/servers/${id}/test`, {});
+      toast.success("Health check passed.");
     } catch (e: any) {
       toast.error("Health check failed", { description: e.message });
     }

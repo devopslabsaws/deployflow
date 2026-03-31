@@ -18,6 +18,7 @@ import {
   HardDrive,
   RotateCcw,
   History,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +38,16 @@ import type { Database, DatabaseType } from "@/types";
 import { CreateDatabaseDialog } from "@/components/databases/create-database-dialog";
 import { BackupPolicyDialog } from "@/components/databases/backup-policy-dialog";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { apiClient } from "@/lib/api-client";
 import {
   Dialog,
@@ -94,6 +105,8 @@ interface RestoreJob {
 export default function DatabasesPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [forceDeleteOpen, setForceDeleteOpen] = useState(false);
+  const [forceDeleteMessage, setForceDeleteMessage] = useState("");
   const [backupPolicyOpen, setBackupPolicyOpen] = useState(false);
   const [backupPolicyDbId, setBackupPolicyDbId] = useState<string | null>(null);
   const [restoreOpen, setRestoreOpen] = useState(false);
@@ -127,16 +140,25 @@ export default function DatabasesPage() {
     }
   };
 
-  const handleDelete = async () => {
+  const handleDelete = async (force = false) => {
     if (!deleteTarget) return;
     try {
-      await deleteDatabase.mutateAsync(deleteTarget.id);
+      await deleteDatabase.mutateAsync({ id: deleteTarget.id, force });
       toast.success(`Database "${deleteTarget.name}" deleted.`);
       setDeleteTarget(null);
+      setForceDeleteOpen(false);
     } catch (e: any) {
-      toast.error("Failed to delete database", { description: e.message });
+      if (!force && e.message?.includes("backup")) {
+        // Show a styled force-delete confirmation dialog instead of native confirm()
+        setForceDeleteMessage(e.message);
+        setForceDeleteOpen(true);
+      } else {
+        toast.error("Failed to delete database", { description: e.message });
+      }
     }
   };
+
+  const handleForceDelete = () => handleDelete(true);
 
   useEffect(() => {
     return () => {
@@ -293,7 +315,7 @@ export default function DatabasesPage() {
         databaseId={backupPolicyDbId || ""}
       />
       <ConfirmActionDialog
-        open={!!deleteTarget}
+        open={!!deleteTarget && !forceDeleteOpen}
         onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
         title="Delete Database"
         description={deleteTarget
@@ -304,6 +326,32 @@ export default function DatabasesPage() {
         isConfirming={deleteDatabase.isPending}
         onConfirm={handleDelete}
       />
+
+      {/* Force-delete confirmation when no backup exists */}
+      <AlertDialog open={forceDeleteOpen} onOpenChange={setForceDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Delete Without Backup?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p className="text-destructive font-medium">{forceDeleteMessage}</p>
+              <p>Are you sure you want to delete <strong>{deleteTarget?.name}</strong> without a backup? This action <strong>cannot be undone</strong> and all data will be permanently lost.</p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setForceDeleteOpen(false); setDeleteTarget(null); }}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleForceDelete}
+              disabled={deleteDatabase.isPending}
+            >
+              {deleteDatabase.isPending ? "Deleting..." : "Yes, Delete Without Backup"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog
         open={restoreOpen}

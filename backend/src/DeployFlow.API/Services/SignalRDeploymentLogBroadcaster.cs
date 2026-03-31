@@ -26,8 +26,13 @@ public sealed class SignalRDeploymentLogBroadcaster : IDeploymentLogBroadcaster
                .Group($"deployment-{deploymentId}")
                .SendAsync("log", new { message, stream, timestamp = DateTime.UtcNow }, ct);
 
+    /// <summary>
+    /// Sends statusChanged on the same LogStreamHub that the frontend already subscribes to
+    /// via SubscribeToDeployment. The DeploymentHub uses project/tenant groups, not
+    /// per-deployment groups, so status broadcasts must go through LogStreamHub.
+    /// </summary>
     public Task BroadcastStatusAsync(Guid deploymentId, string status, CancellationToken ct = default) =>
-        _deployHub.Clients
-                  .Group($"deployment-{deploymentId}")
-                  .SendAsync("statusChanged", new { deploymentId, status }, ct);
+        _logHub.Clients
+               .Group($"deployment-{deploymentId}")
+               .SendAsync("statusChanged", new { deploymentId, status }, ct);
 }

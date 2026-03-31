@@ -62,7 +62,6 @@ public class DeploymentsController : BaseController
 
     /// <summary>Cancel a running deployment.</summary>
     [HttpPost("{id:guid}/cancel")]
-    [RequireResourcePermission(PermissionResource.Deployment, ResourceAction.Deploy)]
     public async Task<IActionResult> Cancel(Guid id, CancellationToken ct)
     {
         var result = await Mediator.Send(new CancelDeploymentCommand(id), ct);
@@ -71,7 +70,6 @@ public class DeploymentsController : BaseController
 
     /// <summary>Roll back to a previous successful deployment.</summary>
     [HttpPost("{id:guid}/rollback")]
-    [RequireResourcePermission(PermissionResource.Deployment, ResourceAction.Deploy)]
     public async Task<IActionResult> Rollback(Guid id, CancellationToken ct)
     {
         var result = await Mediator.Send(new RollbackDeploymentCommand(id), ct);

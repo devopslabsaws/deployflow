@@ -8,7 +8,7 @@ import {
   CheckCircle2, XCircle, AlertTriangle, Loader2,
   ShieldCheck, ShieldX, GitBranch, TrendingUp,
   Brain, Lightbulb, Wrench, MessageSquare, Send,
-  ChevronRight,
+  ChevronRight, ExternalLink, RotateCcw, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +22,7 @@ import {
   useDeployment, useApproveDeployment, useRejectDeployment,
   useStartCanary, usePromoteCanary, useAbortCanary,
   useAiAnalyzeDeployment, useAiChat, useDeploymentErrors,
+  useCancelDeployment, useCreateDeployment,
   type ErrorSuggestionDto,
 } from "@/hooks/use-api";
 import { formatRelativeTime, formatDuration, formatDate } from "@/lib/utils";
@@ -49,6 +50,7 @@ export default function DeploymentDetailPage() {
   const [approvalNotes, setApprovalNotes] = useState("");
   const [canaryTraffic, setCanaryTraffic] = useState(10);
   const [canaryStep, setCanaryStep] = useState(10);
+  const [activeTab, setActiveTab] = useState("overview");
 
   // AI Debug state
   const [aiEnabled, setAiEnabled] = useState(false);
@@ -57,6 +59,8 @@ export default function DeploymentDetailPage() {
 
   const approve = useApproveDeployment();
   const reject = useRejectDeployment();
+  const cancel = useCancelDeployment();
+  const redeploy = useCreateDeployment();
   const startCanary = useStartCanary();
   const promoteCanary = usePromoteCanary();
   const abortCanary = useAbortCanary();
@@ -103,13 +107,97 @@ export default function DeploymentDetailPage() {
     toast.success(`Canary started at ${canaryTraffic}% traffic`);
   };
 
+  const handleCancel = async () => {
+    try {
+      await cancel.mutateAsync(id);
+      toast.success("Deployment cancelled");
+    } catch (e: any) {
+      toast.error("Failed to cancel", { description: e?.message });
+    }
+  };
+
+  const handleRedeploy = async () => {
+    if (!deployment) return;
+    try {
+      await redeploy.mutateAsync({
+        projectId: deployment.projectId,
+        branch: deployment.branch ?? undefined,
+        trigger: "manual",
+      });
+      toast.success("New deployment queued — check the Deployments list");
+    } catch (e: any) {
+      toast.error("Failed to re-deploy", { description: e?.message });
+    }
+  };
+
+  const isStuckQueued = deployment?.status === "queued";
+  const isCancellable = ["queued", "building", "deploying"].includes(deployment?.status ?? "");
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between gap-3">
         <Button variant="ghost" size="sm" onClick={() => router.back()}>
           <ArrowLeft className="h-4 w-4 mr-1.5" />Back
         </Button>
+        {/* Cancel / Re-deploy actions — shown for active or stuck deployments */}
+        {deployment && (
+          <div className="flex items-center gap-2">
+            {isCancellable && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-destructive border-destructive/40 hover:bg-destructive/10"
+                onClick={handleCancel}
+                disabled={cancel.isPending}
+              >
+                {cancel.isPending
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <X className="h-3.5 w-3.5" />}
+                Cancel
+              </Button>
+            )}
+            {(deployment.status === "failed" || deployment.status === "cancelled") && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={handleRedeploy}
+                disabled={redeploy.isPending}
+              >
+                {redeploy.isPending
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <RotateCcw className="h-3.5 w-3.5" />}
+                Re-deploy
+              </Button>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Stuck-at-Queued diagnostic banner */}
+      {isStuckQueued && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/8 px-4 py-3.5">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-amber-500">Deployment is waiting for a runner</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              The backend runner polls every 5 seconds. If it stays queued, check that the API server is
+              running and the project has a server with an SSH key assigned.
+              You can cancel this deployment and trigger a new one if needed.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 shrink-0 h-7 text-xs"
+            onClick={handleCancel}
+            disabled={cancel.isPending}
+          >
+            {cancel.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+            Cancel
+          </Button>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="space-y-3">
@@ -170,7 +258,7 @@ export default function DeploymentDetailPage() {
       )}
 
       {deployment && (
-        <Tabs defaultValue="overview">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="logs">Logs</TabsTrigger>
@@ -210,6 +298,29 @@ export default function DeploymentDetailPage() {
                 </Card>
               ))}
             </div>
+
+            {/* ── App URL banner ── */}
+            {deployment.url && (
+              <Card className="border-emerald-500/30 bg-emerald-500/5">
+                <CardContent className="py-3 flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground mb-0.5">Live App URL</p>
+                    <p className="text-sm font-mono truncate text-emerald-600 dark:text-emerald-400">{deployment.url}</p>
+                  </div>
+                  <a
+                    href={deployment.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0"
+                  >
+                    <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white">
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Open App
+                    </Button>
+                  </a>
+                </CardContent>
+              </Card>
+            )}
             {deployment.errorMessage && (
               <Card className="border-destructive/40 bg-destructive/5">
                 <CardHeader className="pb-2">
@@ -239,7 +350,8 @@ export default function DeploymentDetailPage() {
             )}
           </TabsContent>
 
-          <TabsContent value="logs" className="mt-4">
+          {/* Logs tab — forceMount keeps DeploymentLiveLog mounted so logs/timer preserve when switching tabs */}
+          <TabsContent value="logs" forceMount className={activeTab !== "logs" ? "hidden" : "mt-4"}>
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
@@ -250,6 +362,7 @@ export default function DeploymentDetailPage() {
                 <DeploymentLiveLog
                   deploymentId={id}
                   initialStatus={deployment?.status}
+                  startedAt={deployment?.createdAt}
                 />
               </CardContent>
             </Card>

@@ -12,8 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { useProjects } from "@/hooks/use-api";
-import { apiClient } from "@/lib/api-client";
+import { useProjects, useCreatePipeline } from "@/hooks/use-api";
 import { toast } from "sonner";
 
 export default function NewPipelinePage() {
@@ -27,7 +26,9 @@ export default function NewPipelinePage() {
   const [trigger, setTrigger] = useState("manual");
   const [cronExpression, setCronExpression] = useState("");
   const [branches, setBranches] = useState("main");
-  const [saving, setSaving] = useState(false);
+
+  const createPipeline = useCreatePipeline();
+  const saving = createPipeline.isPending;
 
   const handleCreate = async () => {
     if (!name.trim()) { toast.error("Pipeline name is required."); return; }
@@ -36,23 +37,18 @@ export default function NewPipelinePage() {
       toast.error("Cron expression is required for scheduled pipelines.");
       return;
     }
-
-    setSaving(true);
     try {
-      const payload = {
+      await createPipeline.mutateAsync({
         name: name.trim(),
         description: description.trim() || null,
         projectId,
         trigger,
         cronExpression: trigger === "schedule" ? cronExpression.trim() : null,
-      };
-      await apiClient.post("/pipelines", payload);
+      });
       toast.success(`Pipeline "${name}" created!`);
       router.push("/pipelines");
     } catch (e: any) {
       toast.error("Failed to create pipeline", { description: e.message });
-    } finally {
-      setSaving(false);
     }
   };
 

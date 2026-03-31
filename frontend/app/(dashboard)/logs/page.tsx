@@ -27,7 +27,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { useLogs } from "@/hooks/use-api";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, BASE_URL } from "@/lib/api-client";
 import { toast } from "sonner";
 
 type LogLevel = "info" | "warn" | "error" | "debug" | "all";
@@ -87,9 +87,16 @@ export default function LogsPage() {
     if (levelFilter !== "all") params.set("level", levelFilter);
     if (serviceFilter !== "all") params.set("service", serviceFilter);
 
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? "";
-    const url = `${baseUrl}/api/logs/stream?${params.toString()}`;
-    const es = new EventSource(url, { withCredentials: true });
+    // EventSource cannot send Authorization headers — pass token as query param instead.
+    // The backend accepts `access_token` in the query string for SSE endpoints.
+    try {
+      const raw = localStorage.getItem("deployflow-auth");
+      const token = raw ? (JSON.parse(raw)?.state?.accessToken ?? null) : null;
+      if (token) params.set("access_token", token);
+    } catch { /* ignore */ }
+
+    const url = `${BASE_URL}/logs/stream?${params.toString()}`;
+    const es = new EventSource(url);
     esRef.current = es;
 
     es.addEventListener("log", (e) => {
@@ -156,12 +163,20 @@ export default function LogsPage() {
       if (search) body.search = search;
       body.limit = 50000;
 
+      let exportToken: string | null = null;
+      try {
+        const raw = localStorage.getItem("deployflow-auth");
+        exportToken = raw ? (JSON.parse(raw)?.state?.accessToken ?? null) : null;
+      } catch { /* ignore */ }
+
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/logs/export`,
+        `${BASE_URL}/logs/export`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            ...(exportToken ? { Authorization: `Bearer ${exportToken}` } : {}),
+          },
           body: JSON.stringify(body),
         }
       );

@@ -39,7 +39,8 @@ public static class ServiceCollectionExtensions
             .AddEntityFrameworkStores<ApplicationDbContext>()
             .AddDefaultTokenProviders();
 
-        // Redis cache
+        // Redis cache (with in-memory fallback for when Redis is unavailable)
+        services.AddMemoryCache();
         services.AddStackExchangeRedisCache(options =>
             options.Configuration = configuration.GetConnectionString("Redis"));
 
@@ -107,6 +108,11 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IS3DestinationValidationService, S3DestinationValidationService>();
         services.AddHttpClient("notifications");
 
+        // ── New SOLID services ────────────────────────────────────────────────
+        services.AddSingleton<IDockerfileGeneratorService, DockerfileGeneratorService>();
+        services.AddSingleton<ISmartFixEngine, SmartFixEngine>();
+        services.AddScoped<IBuildService, BuildService>();
+
         // Background services
         var enableBackgroundServices = configuration.GetValue("EnableBackgroundServices", true);
         if (enableBackgroundServices)
@@ -117,6 +123,8 @@ public static class ServiceCollectionExtensions
             services.AddHostedService<ContainerMetricsCollectorService>();
             services.AddHostedService<CostCalculationService>();
             services.AddHostedService<ServerAutoRecoveryService>();
+            services.AddHostedService<PipelineRunnerService>();
+            services.AddHostedService<ScheduledTaskRunnerService>();
         }
 
         return services;

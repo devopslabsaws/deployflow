@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckCircle2,
@@ -14,6 +14,9 @@ import {
   Code2,
   Loader2,
   Download,
+  Upload,
+  ExternalLink,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,8 +24,16 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useDetectStack, useApplyStack, type DetectedStackDto } from "@/hooks/use-api";
+import {
+  useDetectStack,
+  useApplyStack,
+  useCreateDeployment,
+  type DetectedStackDto,
+} from "@/hooks/use-api";
 import { useProjects, useServers } from "@/hooks/use-api";
+import { useQueryClient } from "@tanstack/react-query";
+import { apiClient } from "@/lib/api-client";
+import type { Deployment, DeploymentStatus } from "@/types";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -65,17 +76,28 @@ function parseGitRepo(url: string): { host: "github" | "gitlab" | null; owner: s
 
 export default function OnboardingPage() {
   const [currentStep, setCurrentStep] = useState(1);
+  const [maxVisitedStep, setMaxVisitedStep] = useState(1);
   const [repoUrl, setRepoUrl] = useState("");
   const [fileList, setFileList] = useState("");
   const [packageJson, setPackageJson] = useState("");
   const [detectedStack, setDetectedStack] = useState<DetectedStackDto | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [selectedServerId, setSelectedServerId] = useState("");
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
   const [fetching, setFetching] = useState(false);
+  const [deploymentId, setDeploymentId] = useState<string | null>(null);
+  const [deploymentData, setDeploymentData] = useState<Deployment | null>(null);
 
   const detectStack = useDetectStack();
+  const createDeployment = useCreateDeployment();
+  const queryClient = useQueryClient();
   const { data: projects } = useProjects();
   const { data: servers } = useServers();
+
+  function goToStep(step: number) {
+    setCurrentStep(step);
+    setMaxVisitedStep((prev) => Math.max(prev, step));
+  }
 
   /** Fetch file list from GitHub/GitLab API and auto-fill the textarea */
   async function handleFetchFiles() {
@@ -136,7 +158,7 @@ export default function OnboardingPage() {
             initial[k] = "";
           });
           setEnvVars(initial);
-          setCurrentStep(3);
+          goToStep(3);
           toast.success(`Detected: ${stack.framework}`);
         },
         onError: () => toast.error("Detection failed"),
@@ -151,13 +173,46 @@ export default function OnboardingPage() {
       { framework: detectedStack.framework },
       {
         onSuccess: () => {
-          setCurrentStep(5);
           toast.success("Stack settings applied to project");
+          createDeployment.mutate(
+            { projectId: selectedProjectId, trigger: "manual" },
+            {
+              onSuccess: (deployment) => {
+                setDeploymentId((deployment as any).id ?? (deployment as any).deploymentId ?? null);
+                goToStep(5);
+                toast.success("Deployment triggered!");
+              },
+              onError: () => {
+                goToStep(5);
+                toast.warning("Stack applied — but deployment could not be triggered automatically.");
+              },
+            }
+          );
         },
         onError: () => toast.error("Failed to apply stack"),
       }
     );
   }
+
+  // Poll deployment status on step 5 until a terminal state is reached
+  const TERMINAL: DeploymentStatus[] = ["running", "healthy", "unhealthy", "failed", "cancelled", "stopped", "rolled_back"];
+  React.useEffect(() => {
+    if (!deploymentId || currentStep !== 5) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const dto = await apiClient.get<any>(`/deployments/${deploymentId}`);
+        if (!cancelled) setDeploymentData(dto as Deployment);
+        if (TERMINAL.includes((dto.status as string).replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase() as DeploymentStatus)) {
+          clearInterval(handle);
+        }
+      } catch { /* ignore */ }
+    };
+    poll();
+    const handle = setInterval(poll, 3000);
+    return () => { cancelled = true; clearInterval(handle); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deploymentId, currentStep]);
 
   const progressPercent = ((currentStep - 1) / (steps.length - 1)) * 100;
 
@@ -182,15 +237,17 @@ export default function OnboardingPage() {
           const Icon = step.icon;
           const done = currentStep > step.id;
           const active = currentStep === step.id;
+          const visited = step.id <= maxVisitedStep;
           return (
             <div key={step.id} className="relative z-10 flex flex-col items-center gap-1">
               <button
-                onClick={() => done && setCurrentStep(step.id)}
+                onClick={() => visited && setCurrentStep(step.id)}
                 className={cn(
                   "w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all",
                   done && "bg-primary border-primary text-primary-foreground cursor-pointer",
                   active && "bg-background border-primary text-primary",
-                  !done && !active && "bg-muted border-muted-foreground/30 text-muted-foreground"
+                  !done && !active && visited && "bg-primary/10 border-primary/40 text-primary cursor-pointer",
+                  !visited && "bg-muted border-muted-foreground/30 text-muted-foreground cursor-default"
                 )}
               >
                 {done ? <CheckCircle2 className="w-5 h-5" /> : <Icon className="w-4 h-4" />}
@@ -240,7 +297,7 @@ export default function OnboardingPage() {
                   className="w-full"
                   disabled={!repoUrl}
                   onClick={async () => {
-                    setCurrentStep(2);
+                    goToStep(2);
                     // Auto-fetch if it's a public GitHub/GitLab repo
                     if (parseGitRepo(repoUrl)) {
                       await handleFetchFiles();
@@ -372,7 +429,7 @@ export default function OnboardingPage() {
                   <Button variant="outline" onClick={() => setCurrentStep(2)}>
                     <ChevronLeft className="mr-2 w-4 h-4" /> Back
                   </Button>
-                  <Button className="flex-1" onClick={() => setCurrentStep(4)}>
+                  <Button className="flex-1" onClick={() => goToStep(4)}>
                     Continue <ChevronRight className="ml-2 w-4 h-4" />
                   </Button>
                 </div>
@@ -416,16 +473,43 @@ export default function OnboardingPage() {
                     ))}
                   </div>
                 </div>
+                {(servers ?? []).length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Server <span className="text-muted-foreground font-normal">(optional — uses project default if not selected)</span></Label>
+                    <div className="grid gap-2">
+                      {(servers ?? []).slice(0, 6).map((s: any) => (
+                        <button
+                          key={s.id}
+                          onClick={() => setSelectedServerId(selectedServerId === s.id ? "" : s.id)}
+                          className={cn(
+                            "text-left px-4 py-3 rounded-lg border transition-all text-sm flex items-center gap-3",
+                            selectedServerId === s.id
+                              ? "border-primary bg-primary/5"
+                              : "border-border hover:border-primary/50"
+                          )}
+                        >
+                          <Server className="w-4 h-4 shrink-0 text-muted-foreground" />
+                          <div>
+                            <span className="font-medium">{s.name}</span>
+                            {s.ipAddress && (
+                              <span className="ml-2 text-muted-foreground text-xs">{s.ipAddress}</span>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={() => setCurrentStep(3)}>
                     <ChevronLeft className="mr-2 w-4 h-4" /> Back
                   </Button>
                   <Button
                     className="flex-1"
-                    disabled={!selectedProjectId || applyStack.isPending}
+                    disabled={!selectedProjectId || applyStack.isPending || createDeployment.isPending}
                     onClick={handleApply}
                   >
-                    {applyStack.isPending ? (
+                    {(applyStack.isPending || createDeployment.isPending) ? (
                       <Loader2 className="mr-2 w-4 h-4 animate-spin" />
                     ) : (
                       <Upload className="mr-2 w-4 h-4" />
@@ -437,28 +521,91 @@ export default function OnboardingPage() {
             </Card>
           )}
 
-          {/* Step 5 – Done */}
+          {/* Step 5 – Deployment Status */}
           {currentStep === 5 && (
             <Card className="text-center">
-              <CardContent className="py-12 space-y-4">
-                <div className="flex justify-center">
-                  <div className="w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-                    <Rocket className="w-10 h-10 text-green-600 dark:text-green-400" />
-                  </div>
-                </div>
-                <h2 className="text-2xl font-bold">You&apos;re all set!</h2>
-                <p className="text-muted-foreground max-w-sm mx-auto">
-                  Your stack settings have been applied. Head to your project to trigger the first
-                  deployment.
-                </p>
-                <div className="flex justify-center gap-3 pt-2">
-                  <Button variant="outline" onClick={() => setCurrentStep(1)}>
-                    Start over
-                  </Button>
-                  <Button asChild>
-                    <a href="/projects">Go to Projects</a>
-                  </Button>
-                </div>
+              <CardContent className="py-12 space-y-5">
+                {(() => {
+                  const status = (deploymentData as any)?.status as string | undefined;
+                  const url = (deploymentData as any)?.url as string | undefined;
+                  const isTerminal = status && ["running", "healthy", "unhealthy", "failed", "cancelled", "stopped", "rolled_back"].includes(status);
+                  const isFailed = status && ["failed", "cancelled", "stopped", "rolled_back", "unhealthy"].includes(status);
+                  const isSuccess = status && ["running", "healthy"].includes(status);
+
+                  return (
+                    <>
+                      <div className="flex justify-center">
+                        <div className={cn(
+                          "w-20 h-20 rounded-full flex items-center justify-center",
+                          isSuccess ? "bg-green-100 dark:bg-green-900/30" :
+                          isFailed ? "bg-red-100 dark:bg-red-900/30" :
+                          "bg-blue-100 dark:bg-blue-900/30 animate-pulse"
+                        )}>
+                          {isSuccess ? (
+                            <Rocket className="w-10 h-10 text-green-600 dark:text-green-400" />
+                          ) : isFailed ? (
+                            <AlertCircle className="w-10 h-10 text-red-500" />
+                          ) : (
+                            <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
+                          )}
+                        </div>
+                      </div>
+
+                      <h2 className="text-2xl font-bold">
+                        {isSuccess ? "You're all set!" : isFailed ? "Deployment failed" : deploymentId ? "Deploying…" : "Deployment triggered!"}
+                      </h2>
+
+                      <p className="text-muted-foreground max-w-sm mx-auto">
+                        {isSuccess
+                          ? "Your app is live and running."
+                          : isFailed
+                          ? "The deployment encountered an error. Check the logs for details."
+                          : deploymentId
+                          ? "Building and deploying your app. This usually takes 1–3 minutes."
+                          : "Stack settings applied. Head to your project to monitor the deployment."}
+                      </p>
+
+                      {status && (
+                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-muted text-muted-foreground">
+                          {!isTerminal && <Loader2 className="w-3 h-3 animate-spin" />}
+                          {isSuccess && <CheckCircle2 className="w-3 h-3 text-green-500" />}
+                          {isFailed && <AlertCircle className="w-3 h-3 text-red-500" />}
+                          Status: <span className="capitalize">{status.replace(/_/g, " ")}</span>
+                        </div>
+                      )}
+
+                      {url && (
+                        <div className="pt-2">
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium transition-colors"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                            Open your app
+                          </a>
+                          <p className="text-xs text-muted-foreground mt-2">{url}</p>
+                        </div>
+                      )}
+
+                      <div className="flex justify-center gap-3 pt-2">
+                        <Button variant="outline" onClick={() => setCurrentStep(1)}>
+                          Start over
+                        </Button>
+                        {deploymentId ? (
+                          <Button asChild>
+                            <a href={`/deployments/${deploymentId}`}>View Deployment</a>
+                          </Button>
+                        ) : (
+                          <Button asChild>
+                            <a href="/projects">Go to Projects</a>
+                          </Button>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
               </CardContent>
             </Card>
           )}

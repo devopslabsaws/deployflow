@@ -4,6 +4,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   Globe, Plus, CheckCircle, AlertCircle, Clock, Lock, Trash2, MoreVertical, RefreshCw,
+  Info, Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -52,13 +53,14 @@ export default function DomainsPage() {
   const renewSsl = useRenewDomainSsl();
 
   const handleDnsCheck = async (id: string, name: string) => {
+    const displayName = name || id.slice(0, 8);
     try {
       const result = await checkDns.mutateAsync(id);
       setDnsMessages((prev) => ({ ...prev, [id]: result.message }));
       if (result.isValid) {
-        toast.success(`DNS verified for ${name}.`);
+        toast.success(`DNS verified for ${displayName}.`);
       } else {
-        toast.warning(`DNS not ready for ${name}.`, { description: result.message });
+        toast.warning(`DNS not ready for ${displayName}.`, { description: result.message });
       }
     } catch (e: any) {
       toast.error("DNS check failed", { description: e.message });
@@ -223,6 +225,19 @@ export default function DomainsPage() {
                 onChange={(e) => setForm((f) => ({ ...f, domainName: e.target.value }))}
               />
             </div>
+            {form.domainName.trim() && (
+              <div className="rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs text-muted-foreground space-y-1">
+                <p className="flex items-center gap-1.5 font-medium text-blue-600 dark:text-blue-400">
+                  <Info className="h-3.5 w-3.5 shrink-0" />
+                  Before clicking Add, configure your DNS:
+                </p>
+                <p className="pl-5">
+                  Add an <span className="font-mono font-semibold">A record</span> for{" "}
+                  <span className="font-mono">{form.domainName}</span> pointing to your server{"\u2019"}s public IP address.
+                  DNS must propagate before SSL provisioning will work.
+                </p>
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <div>
                 <Label>Enable SSL (Let&apos;s Encrypt)</Label>

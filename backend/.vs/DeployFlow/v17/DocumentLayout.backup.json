@@ -3,15 +3,28 @@
   "WorkspaceRootPath": "D:\\LNT\\Coolify\\backend\\",
   "Documents": [
     {
+      "AbsoluteMoniker": "D:0:0:{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}|src\\DeployFlow.API\\DeployFlow.API.csproj|d:\\lnt\\coolify\\backend\\src\\deployflow.api\\controllers\\sshkeyscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}|src\\DeployFlow.API\\DeployFlow.API.csproj|solutionrelative:src\\deployflow.api\\controllers\\sshkeyscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}|src\\DeployFlow.API\\DeployFlow.API.csproj|d:\\lnt\\coolify\\backend\\src\\deployflow.api\\controllers\\deploymentscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}|src\\DeployFlow.API\\DeployFlow.API.csproj|solutionrelative:src\\deployflow.api\\controllers\\deploymentscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}|src\\DeployFlow.API\\DeployFlow.API.csproj|d:\\lnt\\coolify\\backend\\src\\deployflow.api\\controllers\\projectscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}|src\\DeployFlow.API\\DeployFlow.API.csproj|solutionrelative:src\\deployflow.api\\controllers\\projectscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}|src\\DeployFlow.API\\DeployFlow.API.csproj|d:\\lnt\\coolify\\backend\\src\\deployflow.api\\controllers\\authcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}|src\\DeployFlow.API\\DeployFlow.API.csproj|solutionrelative:src\\deployflow.api\\controllers\\authcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}|src\\DeployFlow.API\\DeployFlow.API.csproj|d:\\lnt\\coolify\\backend\\src\\deployflow.api\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}|src\\DeployFlow.API\\DeployFlow.API.csproj|solutionrelative:src\\deployflow.api\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\SudhakarBoina\\AppData\\Local\\Temp\\.vsdbgsrc\\44aa595dc2a1078aa662bebf92f46ec0aa83d37961bfc5ec1f12f1b995219153\\AddressBinder.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}|src\\DeployFlow.API\\DeployFlow.API.csproj|d:\\lnt\\coolify\\backend\\src\\deployflow.api\\deployflow.api.csproj||{04B8AB82-A572-4FEF-95CE-5222444B6B64}|",
+      "RelativeMoniker": "D:0:0:{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}|src\\DeployFlow.API\\DeployFlow.API.csproj|solutionrelative:src\\deployflow.api\\deployflow.api.csproj||{04B8AB82-A572-4FEF-95CE-5222444B6B64}|"
     }
   ],
   "DocumentGroupContainers": [
@@ -21,7 +34,7 @@
       "DocumentGroups": [
         {
           "DockedHeight": 132,
-          "SelectedChildIndex": 9,
+          "SelectedChildIndex": 8,
           "Children": [
             {
               "$type": "Bookmark",
@@ -57,39 +70,75 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
-              "Title": "Program.cs",
-              "DocumentMoniker": "D:\\LNT\\Coolify\\backend\\src\\DeployFlow.API\\Program.cs",
-              "RelativeDocumentMoniker": "src\\DeployFlow.API\\Program.cs",
-              "ToolTip": "D:\\LNT\\Coolify\\backend\\src\\DeployFlow.API\\Program.cs",
-              "RelativeToolTip": "src\\DeployFlow.API\\Program.cs",
-              "ViewState": "AgIAABMAAAAAAAAAAADwvxEAAAAuAAAAAAAAAA==",
+              "DocumentIndex": 0,
+              "Title": "SshKeysController.cs",
+              "DocumentMoniker": "D:\\LNT\\Coolify\\backend\\src\\DeployFlow.API\\Controllers\\SshKeysController.cs",
+              "RelativeDocumentMoniker": "src\\DeployFlow.API\\Controllers\\SshKeysController.cs",
+              "ToolTip": "D:\\LNT\\Coolify\\backend\\src\\DeployFlow.API\\Controllers\\SshKeysController.cs",
+              "RelativeToolTip": "src\\DeployFlow.API\\Controllers\\SshKeysController.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAA4AAAANAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-03-21T08:41:27.026Z"
+              "WhenOpened": "2026-03-31T07:10:34.773Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 0,
+              "DocumentIndex": 1,
+              "Title": "DeploymentsController.cs",
+              "DocumentMoniker": "D:\\LNT\\Coolify\\backend\\src\\DeployFlow.API\\Controllers\\DeploymentsController.cs",
+              "RelativeDocumentMoniker": "src\\DeployFlow.API\\Controllers\\DeploymentsController.cs",
+              "ToolTip": "D:\\LNT\\Coolify\\backend\\src\\DeployFlow.API\\Controllers\\DeploymentsController.cs",
+              "RelativeToolTip": "src\\DeployFlow.API\\Controllers\\DeploymentsController.cs",
+              "ViewState": "AgIAAAYAAAAAAAAAAAAAABEAAABCAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-31T06:03:26.735Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
               "Title": "ProjectsController.cs",
               "DocumentMoniker": "D:\\LNT\\Coolify\\backend\\src\\DeployFlow.API\\Controllers\\ProjectsController.cs",
               "RelativeDocumentMoniker": "src\\DeployFlow.API\\Controllers\\ProjectsController.cs",
               "ToolTip": "D:\\LNT\\Coolify\\backend\\src\\DeployFlow.API\\Controllers\\ProjectsController.cs",
               "RelativeToolTip": "src\\DeployFlow.API\\Controllers\\ProjectsController.cs",
-              "ViewState": "AgIAABMAAAAAAAAAAAAQwCMAAABGAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAA4AAAAEAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-03-21T07:06:39.92Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-03-31T05:16:30.521Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
-              "Title": "AddressBinder.cs",
-              "DocumentMoniker": "C:\\Users\\SudhakarBoina\\AppData\\Local\\Temp\\.vsdbgsrc\\44aa595dc2a1078aa662bebf92f46ec0aa83d37961bfc5ec1f12f1b995219153\\AddressBinder.cs",
-              "ToolTip": "C:\\Users\\SudhakarBoina\\AppData\\Local\\Temp\\.vsdbgsrc\\44aa595dc2a1078aa662bebf92f46ec0aa83d37961bfc5ec1f12f1b995219153\\AddressBinder.cs [Read Only]",
-              "ViewState": "AgIAAJwAAAAAAAAAAAAcwK4AAAADAAAAAQAAAA==",
+              "DocumentIndex": 3,
+              "Title": "AuthController.cs",
+              "DocumentMoniker": "D:\\LNT\\Coolify\\backend\\src\\DeployFlow.API\\Controllers\\AuthController.cs",
+              "RelativeDocumentMoniker": "src\\DeployFlow.API\\Controllers\\AuthController.cs",
+              "ToolTip": "D:\\LNT\\Coolify\\backend\\src\\DeployFlow.API\\Controllers\\AuthController.cs",
+              "RelativeToolTip": "src\\DeployFlow.API\\Controllers\\AuthController.cs",
+              "ViewState": "AgIAAAYAAAAAAAAAAAAgwBUAAAAEAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-03-21T07:06:05.477Z",
-              "EditorCaption": " [Read Only]"
+              "WhenOpened": "2026-03-31T05:55:31.629Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "Program.cs",
+              "DocumentMoniker": "D:\\LNT\\Coolify\\backend\\src\\DeployFlow.API\\Program.cs",
+              "RelativeDocumentMoniker": "src\\DeployFlow.API\\Program.cs",
+              "ToolTip": "D:\\LNT\\Coolify\\backend\\src\\DeployFlow.API\\Program.cs",
+              "RelativeToolTip": "src\\DeployFlow.API\\Program.cs",
+              "ViewState": "AgIAABsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-31T05:55:02.399Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "DeployFlow.API",
+              "DocumentMoniker": "D:\\LNT\\Coolify\\backend\\src\\DeployFlow.API\\DeployFlow.API.csproj",
+              "RelativeDocumentMoniker": "src\\DeployFlow.API\\DeployFlow.API.csproj",
+              "ToolTip": "D:\\LNT\\Coolify\\backend\\src\\DeployFlow.API\\DeployFlow.API.csproj",
+              "RelativeToolTip": "src\\DeployFlow.API\\DeployFlow.API.csproj",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-03-31T05:15:10.294Z"
             },
             {
               "$type": "Bookmark",

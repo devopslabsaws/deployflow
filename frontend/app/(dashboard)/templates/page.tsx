@@ -18,6 +18,7 @@ import {
   Mail,
   Settings2,
   HardDrive,
+  Server,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -56,6 +57,7 @@ const categories = [
   { id: "communication", label: "Comms", icon: MessageSquare },
   { id: "productivity", label: "Productivity", icon: Mail },
   { id: "backend", label: "Backend", icon: Box },
+  { id: "web", label: "Web", icon: Server },
 ];
 
 const categoryColors: Record<string, string> = {

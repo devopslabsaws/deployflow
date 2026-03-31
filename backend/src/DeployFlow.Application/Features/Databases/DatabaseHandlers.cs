@@ -125,7 +125,7 @@ public class CreateDatabaseCommandHandler : IRequestHandler<CreateDatabaseComman
 
 // â”€â”€â”€ Delete Database â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-public record DeleteDatabaseCommand(Guid Id) : IRequest<Result>;
+public record DeleteDatabaseCommand(Guid Id, bool Force = false) : IRequest<Result>;
 
 public class DeleteDatabaseCommandHandler : IRequestHandler<DeleteDatabaseCommand, Result>
 {
@@ -145,7 +145,7 @@ public class DeleteDatabaseCommandHandler : IRequestHandler<DeleteDatabaseComman
         if (db.Status == DatabaseInstanceStatus.Restoring || await _restoreJobs.HasActiveRestoreAsync(db.Id, ct))
             return Result.Failure("Database restore is in progress. Wait for restore completion before deleting.", 409);
 
-        if (db.BackupEnabled)
+        if (db.BackupEnabled && !request.Force)
         {
             var latestCompletedBackup = await _uow.DatabaseBackups.GetLatestCompletedAsync(db.Id, ct);
             if (latestCompletedBackup is null)

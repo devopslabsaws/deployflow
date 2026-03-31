@@ -12,10 +12,14 @@ namespace DeployFlow.Application.Features.Integrations;
 
 internal static class IntegrationChannels
 {
-    public const string DockerHub = "docker_hub";
-    public const string GitLab    = "gitlab";
-    public const string Slack     = "slack";
-    public const string AWS       = "aws";
+    public const string DockerHub  = "docker_hub";
+    public const string GitHub     = "github";
+    public const string GitLab     = "gitlab";
+    public const string Slack      = "slack";
+    public const string Teams      = "msteams";
+    public const string AWS        = "aws";
+    public const string Grafana    = "grafana";
+    public const string Cloudflare = "cloudflare";
 }
 
 // ─── DTOs ─────────────────────────────────────────────────────────────────────
@@ -172,6 +176,273 @@ public class VerifyDockerHubCommandHandler : IRequestHandler<VerifyDockerHubComm
         {
             return Result<IntegrationStatusDto>.Failure("Could not reach Docker Hub. Please check your network connection.", 503);
         }
+    }
+}
+
+// ─── Generic Integration Status ───────────────────────────────────────────────
+
+public record GetIntegrationStatusQuery(string Channel, string DisplayName, string? UsernameField = null)
+    : IRequest<Result<IntegrationStatusDto>>;
+
+public class GetIntegrationStatusQueryHandler
+    : IRequestHandler<GetIntegrationStatusQuery, Result<IntegrationStatusDto>>
+{
+    private readonly IUnitOfWork _uow;
+    private readonly ICurrentUser _currentUser;
+
+    public GetIntegrationStatusQueryHandler(IUnitOfWork uow, ICurrentUser cu)
+    { _uow = uow; _currentUser = cu; }
+
+    public async Task<Result<IntegrationStatusDto>> Handle(GetIntegrationStatusQuery request, CancellationToken ct)
+    {
+        var configs = await _uow.NotificationConfigs.GetByTenantAsync(_currentUser.TenantId, ct);
+        var cfg = configs.FirstOrDefault(c => c.Channel == request.Channel);
+
+        if (cfg is null)
+            return Result<IntegrationStatusDto>.Success(
+                new IntegrationStatusDto(request.DisplayName, false, null, null));
+
+        string? identifier = null;
+        if (request.UsernameField is not null)
+        {
+            try
+            {
+                var doc = JsonDocument.Parse(cfg.ConfigJson);
+                if (doc.RootElement.TryGetProperty(request.UsernameField, out var u))
+                    identifier = u.GetString();
+            }
+            catch { /* malformed JSON */ }
+        }
+
+        return Result<IntegrationStatusDto>.Success(
+            new IntegrationStatusDto(request.DisplayName, cfg.IsEnabled, identifier, cfg.UpdatedAt));
+    }
+}
+
+// ─── Generic Integration Disconnect ──────────────────────────────────────────
+
+public record DisconnectIntegrationCommand(string Channel, string DisplayName) : IRequest<Result>;
+
+public class DisconnectIntegrationCommandHandler : IRequestHandler<DisconnectIntegrationCommand, Result>
+{
+    private readonly IUnitOfWork _uow;
+    private readonly ICurrentUser _currentUser;
+
+    public DisconnectIntegrationCommandHandler(IUnitOfWork uow, ICurrentUser cu)
+    { _uow = uow; _currentUser = cu; }
+
+    public async Task<Result> Handle(DisconnectIntegrationCommand request, CancellationToken ct)
+    {
+        var configs = await _uow.NotificationConfigs.GetByTenantAsync(_currentUser.TenantId, ct);
+        var cfg = configs.FirstOrDefault(c => c.Channel == request.Channel);
+
+        if (cfg is null)
+            return Result.Failure($"{request.DisplayName} is not connected.", 404);
+
+        await _uow.NotificationConfigs.DeleteAsync(cfg, ct);
+        await _uow.SaveChangesAsync(ct);
+        return Result.Success();
+    }
+}
+
+// ─── Connect GitHub ───────────────────────────────────────────────────────────
+
+public record ConnectGitHubCommand(string Username, string PersonalAccessToken)
+    : IRequest<Result<IntegrationStatusDto>>;
+
+public class ConnectGitHubCommandHandler
+    : IRequestHandler<ConnectGitHubCommand, Result<IntegrationStatusDto>>
+{
+    private readonly IUnitOfWork _uow;
+    private readonly ICurrentUser _currentUser;
+    private readonly IEncryptionService _encryption;
+
+    public ConnectGitHubCommandHandler(IUnitOfWork uow, ICurrentUser cu, IEncryptionService enc)
+    { _uow = uow; _currentUser = cu; _encryption = enc; }
+
+    public async Task<Result<IntegrationStatusDto>> Handle(ConnectGitHubCommand request, CancellationToken ct)
+    {
+        var configJson = JsonSerializer.Serialize(new
+        {
+            username = request.Username,
+            pat      = _encryption.Encrypt(request.PersonalAccessToken),
+        });
+
+        var configs  = await _uow.NotificationConfigs.GetByTenantAsync(_currentUser.TenantId, ct);
+        var existing = configs.FirstOrDefault(c => c.Channel == IntegrationChannels.GitHub);
+
+        if (existing is not null)
+        {
+            existing.ConfigJson = configJson;
+            existing.IsEnabled  = true;
+            existing.UpdatedAt  = DateTime.UtcNow;
+            await _uow.NotificationConfigs.UpdateAsync(existing, ct);
+        }
+        else
+        {
+            await _uow.NotificationConfigs.AddAsync(new NotificationConfig
+            {
+                TenantId   = _currentUser.TenantId,
+                Channel    = IntegrationChannels.GitHub,
+                Name       = "GitHub",
+                IsEnabled  = true,
+                ConfigJson = configJson,
+                EventsJson = "[]",
+            }, ct);
+        }
+
+        await _uow.SaveChangesAsync(ct);
+        return Result<IntegrationStatusDto>.Success(
+            new IntegrationStatusDto("GitHub", true, request.Username, DateTime.UtcNow));
+    }
+}
+
+// ─── Connect GitLab ───────────────────────────────────────────────────────────
+
+public record ConnectGitLabCommand(string Username, string PersonalAccessToken)
+    : IRequest<Result<IntegrationStatusDto>>;
+
+public class ConnectGitLabCommandHandler
+    : IRequestHandler<ConnectGitLabCommand, Result<IntegrationStatusDto>>
+{
+    private readonly IUnitOfWork _uow;
+    private readonly ICurrentUser _currentUser;
+    private readonly IEncryptionService _encryption;
+
+    public ConnectGitLabCommandHandler(IUnitOfWork uow, ICurrentUser cu, IEncryptionService enc)
+    { _uow = uow; _currentUser = cu; _encryption = enc; }
+
+    public async Task<Result<IntegrationStatusDto>> Handle(ConnectGitLabCommand request, CancellationToken ct)
+    {
+        var configJson = JsonSerializer.Serialize(new
+        {
+            username = request.Username,
+            pat      = _encryption.Encrypt(request.PersonalAccessToken),
+        });
+
+        var configs  = await _uow.NotificationConfigs.GetByTenantAsync(_currentUser.TenantId, ct);
+        var existing = configs.FirstOrDefault(c => c.Channel == IntegrationChannels.GitLab);
+
+        if (existing is not null)
+        {
+            existing.ConfigJson = configJson;
+            existing.IsEnabled  = true;
+            existing.UpdatedAt  = DateTime.UtcNow;
+            await _uow.NotificationConfigs.UpdateAsync(existing, ct);
+        }
+        else
+        {
+            await _uow.NotificationConfigs.AddAsync(new NotificationConfig
+            {
+                TenantId   = _currentUser.TenantId,
+                Channel    = IntegrationChannels.GitLab,
+                Name       = "GitLab",
+                IsEnabled  = true,
+                ConfigJson = configJson,
+                EventsJson = "[]",
+            }, ct);
+        }
+
+        await _uow.SaveChangesAsync(ct);
+        return Result<IntegrationStatusDto>.Success(
+            new IntegrationStatusDto("GitLab", true, request.Username, DateTime.UtcNow));
+    }
+}
+
+// ─── Connect Teams ────────────────────────────────────────────────────────────
+
+public record ConnectTeamsCommand(string WebhookUrl) : IRequest<Result<IntegrationStatusDto>>;
+
+public class ConnectTeamsCommandHandler
+    : IRequestHandler<ConnectTeamsCommand, Result<IntegrationStatusDto>>
+{
+    private readonly IUnitOfWork _uow;
+    private readonly ICurrentUser _currentUser;
+
+    public ConnectTeamsCommandHandler(IUnitOfWork uow, ICurrentUser cu)
+    { _uow = uow; _currentUser = cu; }
+
+    public async Task<Result<IntegrationStatusDto>> Handle(ConnectTeamsCommand request, CancellationToken ct)
+    {
+        var configJson = JsonSerializer.Serialize(new { webhookUrl = request.WebhookUrl });
+
+        var configs  = await _uow.NotificationConfigs.GetByTenantAsync(_currentUser.TenantId, ct);
+        var existing = configs.FirstOrDefault(c => c.Channel == IntegrationChannels.Teams);
+
+        if (existing is not null)
+        {
+            existing.ConfigJson = configJson;
+            existing.IsEnabled  = true;
+            existing.UpdatedAt  = DateTime.UtcNow;
+            await _uow.NotificationConfigs.UpdateAsync(existing, ct);
+        }
+        else
+        {
+            await _uow.NotificationConfigs.AddAsync(new NotificationConfig
+            {
+                TenantId   = _currentUser.TenantId,
+                Channel    = IntegrationChannels.Teams,
+                Name       = "Microsoft Teams",
+                IsEnabled  = true,
+                ConfigJson = configJson,
+                EventsJson = "[\"deployment.succeeded\",\"deployment.failed\",\"alert.triggered\"]",
+            }, ct);
+        }
+
+        await _uow.SaveChangesAsync(ct);
+        return Result<IntegrationStatusDto>.Success(
+            new IntegrationStatusDto("Microsoft Teams", true, null, DateTime.UtcNow));
+    }
+}
+
+// ─── Connect Cloudflare ───────────────────────────────────────────────────────
+
+public record ConnectCloudflareCommand(string ApiToken, string ZoneId) : IRequest<Result<IntegrationStatusDto>>;
+
+public class ConnectCloudflareCommandHandler
+    : IRequestHandler<ConnectCloudflareCommand, Result<IntegrationStatusDto>>
+{
+    private readonly IUnitOfWork _uow;
+    private readonly ICurrentUser _currentUser;
+    private readonly IEncryptionService _encryption;
+
+    public ConnectCloudflareCommandHandler(IUnitOfWork uow, ICurrentUser cu, IEncryptionService enc)
+    { _uow = uow; _currentUser = cu; _encryption = enc; }
+
+    public async Task<Result<IntegrationStatusDto>> Handle(ConnectCloudflareCommand request, CancellationToken ct)
+    {
+        var configJson = JsonSerializer.Serialize(new
+        {
+            apiToken = _encryption.Encrypt(request.ApiToken),
+            zoneId   = request.ZoneId,
+        });
+
+        var configs  = await _uow.NotificationConfigs.GetByTenantAsync(_currentUser.TenantId, ct);
+        var existing = configs.FirstOrDefault(c => c.Channel == IntegrationChannels.Cloudflare);
+
+        if (existing is not null)
+        {
+            existing.ConfigJson = configJson;
+            existing.IsEnabled  = true;
+            existing.UpdatedAt  = DateTime.UtcNow;
+            await _uow.NotificationConfigs.UpdateAsync(existing, ct);
+        }
+        else
+        {
+            await _uow.NotificationConfigs.AddAsync(new NotificationConfig
+            {
+                TenantId   = _currentUser.TenantId,
+                Channel    = IntegrationChannels.Cloudflare,
+                Name       = "Cloudflare",
+                IsEnabled  = true,
+                ConfigJson = configJson,
+                EventsJson = "[]",
+            }, ct);
+        }
+
+        await _uow.SaveChangesAsync(ct);
+        return Result<IntegrationStatusDto>.Success(
+            new IntegrationStatusDto("Cloudflare", true, request.ZoneId, DateTime.UtcNow));
     }
 }
 

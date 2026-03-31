@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Bot,
@@ -14,6 +15,7 @@ import {
   ThumbsDown,
   User,
   Zap,
+  ArrowLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +23,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
+import { useAiChat } from "@/hooks/use-api";
 
 interface Message {
   id: string;
@@ -28,6 +31,7 @@ interface Message {
   content: string;
   timestamp: Date;
   thinking?: boolean;
+  quickReplies?: string[];
 }
 
 const suggestedPrompts = [
@@ -80,26 +84,31 @@ healthcheck:
 ];
 
 export default function AIAssistantPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const fromDeploymentId = searchParams.get("id");
+  const fromContext = searchParams.get("context");
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
       role: "assistant",
       content: "Hello! I'm your DeployFlow AI assistant. I can help you with deployment optimization, infrastructure planning, log analysis, and DevOps best practices. What would you like help with today?",
       timestamp: new Date(),
+      quickReplies: ["How do I optimize my deployment?", "Analyze recent failures", "Best practices for Docker"],
     },
   ]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const mockResponseIndex = useRef(0);
+  const aiChat = useAiChat();
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   const sendMessage = async (text: string) => {
-    if (!text.trim()) return;
+    if (!text.trim() || isTyping) return;
 
     const userMsg: Message = {
       id: `user-${Date.now()}`,
@@ -112,21 +121,21 @@ export default function AIAssistantPage() {
     setInput("");
     setIsTyping(true);
 
-    await new Promise((r) => setTimeout(r, 1200 + Math.random() * 800));
-
-    const responseContent =
-      mockResponses[mockResponseIndex.current % mockResponses.length];
-    mockResponseIndex.current++;
-
-    const assistantMsg: Message = {
-      id: `assistant-${Date.now()}`,
-      role: "assistant",
-      content: responseContent,
-      timestamp: new Date(),
-    };
-
-    setIsTyping(false);
-    setMessages((prev) => [...prev, assistantMsg]);
+    try {
+      const result = await aiChat.mutateAsync({ message: text });
+      const assistantMsg: Message = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: result.reply,
+        timestamp: new Date(),
+        quickReplies: result.quickReplies,
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
+    } catch {
+      toast.error("Failed to get AI response");
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -140,6 +149,20 @@ export default function AIAssistantPage() {
     <div className="mx-auto flex h-[calc(100vh-7rem)] max-w-4xl flex-col">
       {/* Header */}
       <div className="mb-4 flex shrink-0 items-center gap-3">
+        {(fromDeploymentId || fromContext) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 shrink-0 rounded-lg p-0 text-muted-foreground hover:text-foreground"
+            onClick={() =>
+              fromDeploymentId
+                ? router.push(`/deployments/${fromDeploymentId}`)
+                : router.back()
+            }
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+        )}
         <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-purple-500/20 bg-gradient-to-br from-purple-500/15 to-blue-500/15">
           <Bot className="h-5 w-5 text-purple-400" />
         </div>
@@ -161,7 +184,7 @@ export default function AIAssistantPage() {
         <ScrollArea className="flex-1 px-4 py-4">
           <div className="space-y-4">
             {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
+              <MessageBubble key={msg.id} message={msg} onQuickReply={sendMessage} />
             ))}
 
             {/* Typing indicator */}
@@ -240,12 +263,18 @@ export default function AIAssistantPage() {
   );
 }
 
-function MessageBubble({ message }: { message: Message }) {
+function MessageBubble({ message, onQuickReply }: { message: Message; onQuickReply?: (text: string) => void }) {
   const isUser = message.role === "user";
+  const [feedback, setFeedback] = useState<"up" | "down" | null>(null);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(message.content);
     toast.success("Copied to clipboard");
+  };
+
+  const handleFeedback = (value: "up" | "down") => {
+    setFeedback(value);
+    toast.success(value === "up" ? "Thanks for the feedback!" : "Got it — we'll improve this response.");
   };
 
   return (
@@ -295,15 +324,42 @@ function MessageBubble({ message }: { message: Message }) {
             <Button variant="ghost" size="sm" className="h-6 w-6 rounded-md p-0" onClick={handleCopy}>
               <Copy className="h-3 w-3" />
             </Button>
-            <Button variant="ghost" size="sm" className="h-6 w-6 rounded-md p-0">
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn("h-6 w-6 rounded-md p-0", feedback === "up" && "text-emerald-400 bg-emerald-400/10")}
+              onClick={() => handleFeedback("up")}
+              disabled={feedback !== null}
+            >
               <ThumbsUp className="h-3 w-3" />
             </Button>
-            <Button variant="ghost" size="sm" className="h-6 w-6 rounded-md p-0">
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn("h-6 w-6 rounded-md p-0", feedback === "down" && "text-red-400 bg-red-400/10")}
+              onClick={() => handleFeedback("down")}
+              disabled={feedback !== null}
+            >
               <ThumbsDown className="h-3 w-3" />
             </Button>
             <span className="ml-1 text-[10px] text-muted-foreground/50">
               {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
+          </div>
+        )}
+
+        {/* Quick replies */}
+        {!isUser && message.quickReplies && message.quickReplies.length > 0 && onQuickReply && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {message.quickReplies.map((qr) => (
+              <button
+                key={qr}
+                onClick={() => onQuickReply(qr)}
+                className="rounded-full border border-border/40 bg-muted/30 px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+              >
+                {qr}
+              </button>
+            ))}
           </div>
         )}
       </div>

@@ -189,7 +189,7 @@ public class ApplicationUserConfiguration : IEntityTypeConfiguration<Application
     public void Configure(EntityTypeBuilder<ApplicationUser> b)
     {
         b.Property(x => x.FullName).HasMaxLength(200);
-        b.Property(x => x.AvatarUrl).HasMaxLength(1000);
+        b.Property(x => x.AvatarUrl).HasColumnType("CLOB");  // base64 images can be large
         b.Property(x => x.Role).HasMaxLength(50).IsRequired();
         b.Property(x => x.RefreshToken).HasMaxLength(500);
         b.HasIndex(x => x.TenantId);

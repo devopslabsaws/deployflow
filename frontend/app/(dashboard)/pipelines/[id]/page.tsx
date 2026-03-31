@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Layers, Play, Square, RefreshCw, Clock, User, TerminalSquare } from "lucide-react";
+import { ArrowLeft, Waypoints, Play, Square, RefreshCw, Clock, User, Terminal } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -111,7 +111,7 @@ export default function PipelineDetailsPage() {
           </Button>
           <Button variant="outline" size="sm" asChild>
             <Link href={`/pipelines/${pipelineId}/builder`}>
-              <Layers className="mr-1.5 h-4 w-4" />Edit Stages
+              <Waypoints className="mr-1.5 h-4 w-4" />Edit Stages
             </Link>
           </Button>
           <Button size="sm" onClick={handleStartRun} disabled={startRun.isPending || pipeline.status === "running"}>
@@ -165,7 +165,7 @@ export default function PipelineDetailsPage() {
                 variant="destructive"
                 size="sm"
                 onClick={handleCancelRun}
-                disabled={cancelRun.isPending || selectedRun.status !== "running"}
+                disabled={cancelRun.isPending || (selectedRun.status !== "running" && selectedRun.status !== "queued")}
               >
                 <Square className="mr-1.5 h-4 w-4" />Cancel Run
               </Button>
@@ -177,7 +177,7 @@ export default function PipelineDetailsPage() {
       <Card className="glass-card">
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
-            <TerminalSquare className="h-4 w-4" />Stage and Step Logs
+            <Terminal className="h-4 w-4" />Stage and Step Logs
           </CardTitle>
         </CardHeader>
         <CardContent>

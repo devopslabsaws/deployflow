@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowLeft, Settings, Play, Square, RefreshCw, Loader2, Activity, Box, Cpu, MemoryStick } from "lucide-react";
+import { ArrowLeft, Settings, Play, Square, RefreshCw, Loader2, Activity, Layers, Cpu, MemoryStick } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -145,7 +145,7 @@ export default function ServiceDetailPage({ params }: { params: { id: string } }
         <TabsContent value="overview" className="mt-4 space-y-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { label: "Replicas", value: service.replicas ?? 1, icon: Box },
+              { label: "Replicas", value: service.replicas ?? 1, icon: Layers },
               { label: "Status",   value: service.status,        icon: Activity },
               { label: "CPU Limit",    value: service.resources?.cpuLimit ?? "–",    icon: Cpu },
               { label: "Memory Limit", value: service.resources?.memoryLimit ?? "–", icon: MemoryStick },

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Shield, Loader2, CheckCircle2, Copy, Smartphone } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -99,13 +99,30 @@ export function TwoFaDialog({ open, onOpenChange, isEnabled }: TwoFaDialogProps)
     }
   };
 
-  // Open was triggered — fetch setup data on mount if enabling
-  const handleDialogOpenChange = (open: boolean) => {
+  // Fetch setup data whenever the dialog is opened for enabling
+  useEffect(() => {
     if (open && !isEnabled && !setupData && !loading) {
-      handleOpen(true);
-    } else if (!open) {
-      handleOpen(false);
+      setLoading(true);
+      apiClient.get<SetupData>("/auth/2fa/setup")
+        .then((data) => setSetupData(data))
+        .catch((e: any) => {
+          toast.error("Failed to start 2FA setup", { description: e.message });
+          onOpenChange(false);
+        })
+        .finally(() => setLoading(false));
     }
+    if (!open) {
+      // Reset on close
+      setStep("setup");
+      setSetupData(null);
+      setCode("");
+      setCodeError("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const handleDialogOpenChange = (open: boolean) => {
+    if (!open) handleOpen(false);
   };
 
   return (

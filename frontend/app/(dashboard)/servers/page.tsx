@@ -60,7 +60,7 @@ const statusConfig = {
 export default function ServersPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string } | null>(null);
-  const { data: servers, isLoading, refetch } = useServers();
+  const { data: servers, isLoading, isFetching, refetch } = useServers();
   const removeServer = useRemoveServer();
 
   const handleRemove = async () => {
@@ -84,9 +84,9 @@ export default function ServersPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5">
-            <RefreshCw className="h-4 w-4" />
-            Refresh
+          <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5" disabled={isFetching}>
+            <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+            {isFetching ? "Refreshing…" : "Refresh"}
           </Button>
           <Button onClick={() => setAddOpen(true)}>
             <Plus className="w-4 h-4 mr-1.5" />

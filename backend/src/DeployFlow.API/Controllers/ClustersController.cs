@@ -51,7 +51,8 @@ public class ClustersController : BaseController
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateClusterRequest req, CancellationToken ct)
     {
-        if (!_currentUser.Role.Equals("admin", StringComparison.OrdinalIgnoreCase))
+        var role = _currentUser.Role.ToLowerInvariant();
+        if (role != "admin" && role != "owner")
             return Forbid();
 
         if (!Enum.TryParse<ClusterStrategy>(req.Strategy, true, out var strategy))
@@ -71,8 +72,7 @@ public class ClustersController : BaseController
     [HttpPost("{id:guid}/nodes/{serverId:guid}")]
     public async Task<IActionResult> AddNode(Guid id, Guid serverId, CancellationToken ct)
     {
-        if (!_currentUser.Role.Equals("admin", StringComparison.OrdinalIgnoreCase))
-            return Forbid();
+        { var r = _currentUser.Role.ToLowerInvariant(); if (r != "admin" && r != "owner") return Forbid(); }
 
         await _clusters.AddNodeAsync(id, serverId, ct);
         return NoContent();
@@ -82,8 +82,7 @@ public class ClustersController : BaseController
     [HttpDelete("{id:guid}/nodes/{serverId:guid}")]
     public async Task<IActionResult> RemoveNode(Guid id, Guid serverId, CancellationToken ct)
     {
-        if (!_currentUser.Role.Equals("admin", StringComparison.OrdinalIgnoreCase))
-            return Forbid();
+        { var r = _currentUser.Role.ToLowerInvariant(); if (r != "admin" && r != "owner") return Forbid(); }
 
         await _clusters.RemoveNodeAsync(id, serverId, ct);
         return NoContent();
@@ -95,8 +94,7 @@ public class ClustersController : BaseController
     [HttpPost("{id:guid}/nodes/{serverId:guid}/cordon")]
     public async Task<IActionResult> CordonNode(Guid id, Guid serverId, CancellationToken ct)
     {
-        if (!_currentUser.Role.Equals("admin", StringComparison.OrdinalIgnoreCase))
-            return Forbid();
+        { var r = _currentUser.Role.ToLowerInvariant(); if (r != "admin" && r != "owner") return Forbid(); }
         try
         {
             await _clusters.CordonNodeAsync(id, serverId, ct);
@@ -110,8 +108,7 @@ public class ClustersController : BaseController
     [HttpPost("{id:guid}/nodes/{serverId:guid}/uncordon")]
     public async Task<IActionResult> UncordonNode(Guid id, Guid serverId, CancellationToken ct)
     {
-        if (!_currentUser.Role.Equals("admin", StringComparison.OrdinalIgnoreCase))
-            return Forbid();
+        { var r = _currentUser.Role.ToLowerInvariant(); if (r != "admin" && r != "owner") return Forbid(); }
         try
         {
             await _clusters.UncordonNodeAsync(id, serverId, ct);
@@ -125,8 +122,7 @@ public class ClustersController : BaseController
     [HttpPost("{id:guid}/nodes/{serverId:guid}/drain")]
     public async Task<IActionResult> DrainNode(Guid id, Guid serverId, CancellationToken ct)
     {
-        if (!_currentUser.Role.Equals("admin", StringComparison.OrdinalIgnoreCase))
-            return Forbid();
+        { var r = _currentUser.Role.ToLowerInvariant(); if (r != "admin" && r != "owner") return Forbid(); }
         try
         {
             await _clusters.DrainNodeAsync(id, serverId, ct);
@@ -140,8 +136,7 @@ public class ClustersController : BaseController
     [HttpPost("{id:guid}/rebalance")]
     public async Task<IActionResult> Rebalance(Guid id, CancellationToken ct)
     {
-        if (!_currentUser.Role.Equals("admin", StringComparison.OrdinalIgnoreCase))
-            return Forbid();
+        { var r = _currentUser.Role.ToLowerInvariant(); if (r != "admin" && r != "owner") return Forbid(); }
         try
         {
             var result = await _clusters.RebalanceAsync(id, ct);

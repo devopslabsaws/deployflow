@@ -84,6 +84,13 @@ public class ScheduledTasksController : BaseController
         if (task is null || task.IsDeleted) return NotFound();
 
         task.Update(req.Name, req.Command, req.Frequency, req.TimeoutSeconds, req.ContainerName);
+
+        if (req.IsActive.HasValue)
+        {
+            if (req.IsActive.Value) task.Activate();
+            else task.Deactivate();
+        }
+
         await _db.SaveChangesAsync(ct);
         return Ok(ToDto(task));
     }
@@ -157,4 +164,5 @@ public record UpdateScheduledTaskRequest(
     string? Command,
     string? Frequency,
     int? TimeoutSeconds,
-    string? ContainerName);
+    string? ContainerName,
+    bool? IsActive);

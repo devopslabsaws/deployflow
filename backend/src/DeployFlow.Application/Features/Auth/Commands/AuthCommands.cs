@@ -468,7 +468,7 @@ public class ForgotPasswordCommandHandler : IRequestHandler<ForgotPasswordComman
             return Result.Success();
 
         var token       = await _userManager.GeneratePasswordResetTokenAsync(user);
-        var frontendUrl = _config["GitHub:FrontendUrl"] ?? "http://localhost:3003";
+        var frontendUrl = _config["GitHub:FrontendUrl"] ?? "http://localhost:3001";
         var resetLink   = $"{frontendUrl}/reset-password" +
                           $"?email={Uri.EscapeDataString(user.Email!)}" +
                           $"&token={Uri.EscapeDataString(token)}";

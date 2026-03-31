@@ -32,8 +32,8 @@ public class DatabasesController : BaseController
             request.BackupSchedule, request.ServerId), ct));
 
     [HttpDelete("{id:guid}")]
-    public async Task<IActionResult> Delete(Guid id, CancellationToken ct = default)
-        => ToResponse(await Mediator.Send(new DeleteDatabaseCommand(id), ct));
+    public async Task<IActionResult> Delete(Guid id, [FromQuery] bool force = false, CancellationToken ct = default)
+        => ToResponse(await Mediator.Send(new DeleteDatabaseCommand(id, force), ct));
 
     [HttpGet("{id:guid}/backups")]
     public async Task<IActionResult> GetBackups(Guid id, CancellationToken ct = default)

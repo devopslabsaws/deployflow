@@ -30,6 +30,10 @@ export const metadata: Metadata = {
   authors: [{ name: "DeployFlow Team" }],
   creator: "DeployFlow",
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"),
+  icons: {
+    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+    shortcut: "/favicon.svg",
+  },
   openGraph: {
     type: "website",
     locale: "en_US",

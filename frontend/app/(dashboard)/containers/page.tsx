@@ -4,7 +4,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   Container, Play, Square, RefreshCw, Trash2, MoreVertical,
-  Activity, Search, FileText,
+  Activity, Search, ScrollText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -248,7 +248,7 @@ export default function ContainersPage() {
                         <DropdownMenuItem
                           onClick={() => setLogTarget({ serverId: container.serverId, id: container.id, name: container.name })}
                         >
-                          <FileText className="h-4 w-4 mr-2" />View Logs
+                          <ScrollText className="h-4 w-4 mr-2" />View Logs
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
@@ -308,7 +308,7 @@ function ContainerLogDialog({
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 font-mono text-sm">
-            <FileText className="h-4 w-4" />
+            <ScrollText className="h-4 w-4" />
             {target?.name} - Logs
           </DialogTitle>
         </DialogHeader>

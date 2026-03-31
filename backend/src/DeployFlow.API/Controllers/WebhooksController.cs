@@ -132,11 +132,16 @@ public class WebhookReceiverController : BaseController
 
         if (wh is null) return NotFound();
 
+        // Buffer body for signature verification and payload extraction
+        Request.EnableBuffering();
+        var body = await ReadBodyAsync(Request);
+
         if (!string.IsNullOrEmpty(wh.GitHubSecret) && !string.IsNullOrEmpty(sig) &&
-            !await VerifyGitHubSignature(Request, wh.GitHubSecret, sig))
+            !VerifyHmacSha256Signature(wh.GitHubSecret, body, sig, "sha256="))
             return Unauthorized(new { error = "Invalid signature." });
 
-        var result = await Mediator.Send(new TriggerDeploymentCommand(projectId, null, null, "push"), ct);
+        var (branch, commitSha) = ExtractGitPushInfo(body);
+        var result = await Mediator.Send(new TriggerDeploymentCommand(projectId, branch, commitSha, "push"), ct);
         return result.IsSuccess ? Ok(new { message = "Queued." }) : BadRequest(new { error = result.Error });
     }
 
@@ -156,37 +161,172 @@ public class WebhookReceiverController : BaseController
         if (!string.IsNullOrEmpty(wh.GitLabSecret) && token != wh.GitLabSecret)
             return Unauthorized(new { error = "Invalid token." });
 
-        var result = await Mediator.Send(new TriggerDeploymentCommand(projectId, null, null, "push"), ct);
+        Request.EnableBuffering();
+        var body = await ReadBodyAsync(Request);
+        // GitLab push payload: {"ref":"refs/heads/main","checkout_sha":"abc123"}
+        var (branch, commitSha) = ExtractGitPushInfo(body, checkoutShaField: "checkout_sha");
+        var result = await Mediator.Send(new TriggerDeploymentCommand(projectId, branch, commitSha, "push"), ct);
         return result.IsSuccess ? Ok(new { message = "Queued." }) : BadRequest(new { error = result.Error });
     }
 
-    /// <summary>Bitbucket and Gitea stubs (same pattern — validate secret, trigger deploy).</summary>
+    /// <summary>
+    /// Bitbucket Cloud push event receiver.
+    /// Verifies HMAC-SHA256 signature via <c>X-Hub-Signature-256</c> header when a secret is configured.
+    /// </summary>
     [HttpPost("source/bitbucket/events/manual")]
-    [HttpPost("source/gitea/events/manual")]
-    public async Task<IActionResult> GenericWebhook([FromQuery] Guid projectId, CancellationToken ct)
+    public async Task<IActionResult> Bitbucket(
+        [FromHeader(Name = "X-Event-Key")] string? ev,
+        [FromHeader(Name = "X-Hub-Signature-256")] string? sig,
+        [FromQuery] Guid projectId,
+        CancellationToken ct)
     {
+        if (ev is not null && !ev.StartsWith("repo:push", StringComparison.OrdinalIgnoreCase))
+            return Ok(new { message = "Event ignored." });
+
         var wh = await _db.DeployWebhooks
             .FirstOrDefaultAsync(w => w.ProjectId == projectId && w.IsActive && !w.IsDeleted, ct);
 
         if (wh is null) return NotFound();
 
-        var result = await Mediator.Send(new TriggerDeploymentCommand(projectId, null, null, "push"), ct);
+        Request.EnableBuffering();
+        var body = await ReadBodyAsync(Request);
+
+        if (!string.IsNullOrEmpty(wh.BitbucketSecret) && !string.IsNullOrEmpty(sig) &&
+            !VerifyHmacSha256Signature(wh.BitbucketSecret, body, sig, "sha256="))
+            return Unauthorized(new { error = "Invalid signature." });
+
+        // Bitbucket Cloud push payload:
+        // {"push":{"changes":[{"new":{"name":"main","type":"branch","target":{"hash":"abc123"}}}]}}
+        string? branch = null;
+        string? commitSha = null;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("push", out var push) &&
+                push.TryGetProperty("changes", out var changes) &&
+                changes.GetArrayLength() > 0)
+            {
+                var first = changes[0];
+                if (first.TryGetProperty("new", out var newBranch))
+                {
+                    branch = newBranch.TryGetProperty("name", out var name) ? name.GetString() : null;
+                    if (newBranch.TryGetProperty("target", out var target) &&
+                        target.TryGetProperty("hash", out var hash))
+                        commitSha = hash.GetString();
+                }
+            }
+        }
+        catch { /* non-critical — proceed without branch info */ }
+
+        var result = await Mediator.Send(new TriggerDeploymentCommand(projectId, branch, commitSha, "push"), ct);
         return result.IsSuccess ? Ok(new { message = "Queued." }) : BadRequest(new { error = result.Error });
     }
 
-    private static async Task<bool> VerifyGitHubSignature(HttpRequest request, string secret, string signature)
+    /// <summary>
+    /// Gitea push event receiver.
+    /// Verifies HMAC-SHA256 signature via <c>X-Gitea-Signature</c> header when a secret is configured.
+    /// </summary>
+    [HttpPost("source/gitea/events/manual")]
+    public async Task<IActionResult> Gitea(
+        [FromHeader(Name = "X-Gitea-Event")] string? ev,
+        [FromHeader(Name = "X-Gitea-Signature")] string? sig,
+        [FromQuery] Guid projectId,
+        CancellationToken ct)
+    {
+        if (ev is not null && ev != "push")
+            return Ok(new { message = "Event ignored." });
+
+        var wh = await _db.DeployWebhooks
+            .FirstOrDefaultAsync(w => w.ProjectId == projectId && w.IsActive && !w.IsDeleted, ct);
+
+        if (wh is null) return NotFound();
+
+        Request.EnableBuffering();
+        var body = await ReadBodyAsync(Request);
+
+        // Gitea uses plain hex HMAC (no "sha256=" prefix)
+        if (!string.IsNullOrEmpty(wh.GiteaSecret) && !string.IsNullOrEmpty(sig) &&
+            !VerifyHmacSha256Signature(wh.GiteaSecret, body, sig, prefix: null))
+            return Unauthorized(new { error = "Invalid signature." });
+
+        // Gitea push payload: {"ref":"refs/heads/main","head_commit":{"id":"abc123"}}
+        // Also supports: {"after":"abc123"}
+        var (branch, commitSha) = ExtractGitPushInfo(body, headCommitIdField: "id");
+        var result = await Mediator.Send(new TriggerDeploymentCommand(projectId, branch, commitSha, "push"), ct);
+        return result.IsSuccess ? Ok(new { message = "Queued." }) : BadRequest(new { error = result.Error });
+    }
+
+    // ── Signature helpers ─────────────────────────────────────────────────────
+
+    private static async Task<string> ReadBodyAsync(HttpRequest request)
     {
         request.Body.Seek(0, SeekOrigin.Begin);
         using var reader = new StreamReader(request.Body, Encoding.UTF8, leaveOpen: true);
         var body = await reader.ReadToEndAsync();
         request.Body.Seek(0, SeekOrigin.Begin);
+        return body;
+    }
 
-        var key = Encoding.UTF8.GetBytes(secret);
-        var hash = HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(body));
-        var expected = "sha256=" + Convert.ToHexString(hash).ToLowerInvariant();
+    /// <summary>
+    /// Verifies an HMAC-SHA256 signature against the request body.
+    /// The <paramref name="prefix"/> (e.g. "sha256=") is stripped before comparison when provided.
+    /// Uses constant-time comparison to prevent timing attacks.
+    /// </summary>
+    private static bool VerifyHmacSha256Signature(string secret, string body, string signature, string? prefix)
+    {
+        var key   = Encoding.UTF8.GetBytes(secret);
+        var hash  = HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(body));
+        var computed = Convert.ToHexString(hash).ToLowerInvariant();
+
+        var incoming = prefix is not null && signature.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            ? signature[prefix.Length..].ToLowerInvariant()
+            : signature.ToLowerInvariant();
+
+        // Pad to same length before FixedTimeEquals (secrets must be same length for timing safety)
+        if (computed.Length != incoming.Length) return false;
         return CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(expected),
-            Encoding.UTF8.GetBytes(signature));
+            Encoding.UTF8.GetBytes(computed),
+            Encoding.UTF8.GetBytes(incoming));
+    }
+
+    /// <summary>
+    /// Extracts branch name and commit SHA from a git push JSON payload.
+    /// Handles GitHub/Gitea format: <c>{"ref":"refs/heads/main","head_commit":{"id":"abc"}}</c>
+    /// and GitLab format: <c>{"ref":"refs/heads/main","checkout_sha":"abc"}</c>
+    /// </summary>
+    private static (string? Branch, string? CommitSha) ExtractGitPushInfo(
+        string body,
+        string? checkoutShaField = null,
+        string  headCommitIdField = "id")
+    {
+        string? branch    = null;
+        string? commitSha = null;
+        try
+        {
+            using var doc  = System.Text.Json.JsonDocument.Parse(body);
+            var root = doc.RootElement;
+
+            // Ref → branch name
+            if (root.TryGetProperty("ref", out var refProp))
+            {
+                var refStr = refProp.GetString() ?? "";
+                branch = refStr.StartsWith("refs/heads/", StringComparison.Ordinal)
+                    ? refStr["refs/heads/".Length..]
+                    : refStr;
+            }
+
+            // Commit SHA — try multiple field names
+            if (checkoutShaField is not null && root.TryGetProperty(checkoutShaField, out var csSha))
+                commitSha = csSha.GetString();
+            else if (root.TryGetProperty("head_commit", out var hc) &&
+                     hc.TryGetProperty(headCommitIdField, out var hcId))
+                commitSha = hcId.GetString();
+            else if (root.TryGetProperty("after", out var after))
+                commitSha = after.GetString();
+        }
+        catch { /* non-critical */ }
+        return (branch, commitSha);
     }
 }
 

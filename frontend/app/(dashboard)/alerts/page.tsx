@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Bell, BellOff, CheckCircle, AlertTriangle, AlertCircle,
-  Clock, Shield, Server, Filter, MoreVertical, RefreshCw, Plus, FlaskConical, Trash2, Edit,
+  Clock, Shield, Filter, MoreVertical, RefreshCw, Plus, FlaskConical, Trash2, Edit,
+  ChevronDown, ChevronUp, Lightbulb, TrendingUp, Activity, Server, Cpu,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +34,7 @@ import {
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import type { Alert, AlertRule } from "@/types";
+import { cn } from "@/lib/utils";
 
 const severityConfig = {
   critical: { icon: AlertCircle, color: "text-destructive", badge: "destructive" as const, label: "Critical" },
@@ -46,9 +48,95 @@ const statusConfig = {
   resolved: { label: "Resolved", color: "text-success" },
 };
 
+interface RootCauseInfo { cause: string; impact: string; actions: string[]; }
+
+function getRootCause(alert: Alert): RootCauseInfo {
+  const metric = alert.conditions?.[0]?.metric ?? alert.name ?? "";
+  const threshold = alert.conditions?.[0]?.threshold;
+  const m = metric.toLowerCase();
+
+  if (m.includes("cpu")) {
+    return {
+      cause: `CPU usage breached ${threshold ?? "the configured"} threshold. This is usually caused by a sudden traffic spike, a runaway process, or an inefficient code path inside a container.`,
+      impact: "High CPU contention degrades request latency for all services running on this server. Sustained overload triggers OOM kills and cascading failures.",
+      actions: [
+        "SSH into the server: run `top` or `docker stats` to identify the hot container.",
+        "Restart the offending container if it is stuck in a busy loop.",
+        "Scale out horizontally: add replicas or migrate to a larger instance.",
+        "Review recent deployments for CPU-intensive code changes.",
+        "Increase CPU limits in Service → Resources or enable Auto-scaling.",
+      ],
+    };
+  }
+  if (m.includes("memory") || m.includes("mem")) {
+    return {
+      cause: `Memory usage exceeded ${threshold ?? "the configured"} threshold. Common causes: memory leak in application code, missing heap limits, or holding large in-memory caches without eviction.`,
+      impact: "Container will be OOM-killed by the kernel, causing service interruptions. Swap pressure slows all processes on the host.",
+      actions: [
+        "Run `docker stats` to pin down which container is consuming memory.",
+        "Set `--memory` limits in docker run / compose to prevent OOM cascade.",
+        "Profile heap usage: use Node --inspect, dotnet-dump, or Java heap dump.",
+        "Reduce cache TTL or enable eviction policies (Redis maxmemory-policy).",
+        "Deploy a patched version that fixes the leak if one is identified.",
+      ],
+    };
+  }
+  if (m.includes("disk") || m.includes("storage")) {
+    return {
+      cause: `Disk usage is above ${threshold ?? "safe"} capacity. Logs, Docker images, or database files are the most common culprits.`,
+      impact: "When disk is full, databases crash, log writes fail, and container image pulls are blocked — causing deploy failures.",
+      actions: [
+        "Run `df -h` and `du -sh /*` on the server to locate large directories.",
+        "Prune stale Docker images: `docker image prune -af`.",
+        "Enable log rotation in /etc/logrotate.d or via Docker log driver settings.",
+        "Move database data volume to a larger attached disk.",
+        "Set up automated disk-full alerts below 80% to get ahead next time.",
+      ],
+    };
+  }
+  if (m.includes("response") || m.includes("latency") || m.includes("time")) {
+    return {
+      cause: `Response time exceeded ${threshold ?? "acceptable"} ms. Root causes typically include slow database queries, downstream HTTP timeouts, or resource starvation.`,
+      impact: "User-facing requests are slow or timing out. SLA thresholds may be breached.",
+      actions: [
+        "Check slow query logs in your database dashboard.",
+        "Enable distributed tracing (e.g. OpenTelemetry) to identify the slow span.",
+        "Add a circuit breaker for slow downstream dependencies.",
+        "Scale database replicas or add a caching layer (Redis).",
+        "Profile the highest-traffic API endpoints for N+1 query patterns.",
+      ],
+    };
+  }
+  if (m.includes("error") || m.includes("5xx") || m.includes("fail")) {
+    return {
+      cause: `Error rate breached ${threshold ?? "normal"} levels. This indicates application exceptions or infrastructure faults.`,
+      impact: "Users are receiving error responses. Revenue impact is likely if the service is customer-facing.",
+      actions: [
+        "Open the Logs tab for the affected deployment and filter by `stderr`.",
+        "Use the AI Debug tab to run automated root-cause analysis on the error.",
+        "Check recent deployments — if error rate spiked after a deploy, rollback immediately.",
+        "Verify external dependencies (databases, third-party APIs) are responding.",
+        "Set up structured logging with error tracking (Sentry / Datadog).",
+      ],
+    };
+  }
+  // Generic fallback
+  return {
+    cause: `Alert for metric "${metric}" triggered${threshold != null ? ` at value ${threshold}` : ""}. Open your monitoring dashboard to inspect the exact time series.`,
+    impact: "Investigate the affected resource immediately to prevent escalation.",
+    actions: [
+      "Check the Monitoring page for resource utilisation graphs.",
+      "Review recent deployments or configuration changes around the trigger time.",
+      "Acknowledge this alert after investigating so the team knows it is being handled.",
+      "Add a more specific alert rule with a tighter threshold to catch this earlier.",
+    ],
+  };
+}
+
 export default function AlertsPage() {
   const [severity, setSeverity] = useState<string>("all");
   const [acknowledged, setAcknowledged] = useState<string>("all");
+  const [expandedAlertId, setExpandedAlertId] = useState<string | null>(null);
   const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<AlertRule | null>(null);
   const [ruleErrors, setRuleErrors] = useState<Partial<Record<"name" | "metric" | "threshold" | "windowMinutes" | "cooldownMinutes", string>>>({});
@@ -292,10 +380,10 @@ export default function AlertsPage() {
       </div>
 
       {/* Alert list */}
-      <div className="space-y-3">
+      <div className="space-y-2">
         {isLoading
           ? Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-24 w-full rounded-lg" />
+              <Skeleton key={i} className="h-20 w-full rounded-lg" />
             ))
           : alerts?.length === 0
           ? (
@@ -310,50 +398,128 @@ export default function AlertsPage() {
           : alerts?.map((alert) => {
             const sev = severityConfig[alert.severity as keyof typeof severityConfig] ?? severityConfig.info;
             const SevIcon = sev.icon;
+            const isExpanded = expandedAlertId === alert.id;
+            const rootCause = getRootCause(alert);
             return (
               <motion.div
                 key={alert.id}
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
               >
-                <Card className={alert.status === "resolved" ? "opacity-60" : ""}>
-                  <CardContent className="py-4 flex items-start gap-4">
-                    <SevIcon className={`h-5 w-5 mt-0.5 flex-shrink-0 ${sev.color}`} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{alert.name}</span>
-                        <Badge variant={sev.badge}>{sev.label}</Badge>
-                        <Badge variant="outline">{statusConfig[alert.status as keyof typeof statusConfig]?.label ?? alert.status}</Badge>
-                      </div>
-                      {alert.conditions?.length > 0 && (
-                        <p className="text-sm text-muted-foreground mt-1">
-                          Condition: {alert.conditions[0].metric} {alert.conditions[0].operator} {alert.conditions[0].threshold}
+                <Card className={cn(
+                  "transition-all",
+                  alert.status === "resolved" ? "opacity-60" : "",
+                  isExpanded ? "border-primary/40 shadow-sm" : ""
+                )}>
+                  {/* Clickable header row */}
+                  <button
+                    type="button"
+                    className="w-full text-left"
+                    onClick={() => setExpandedAlertId(isExpanded ? null : alert.id)}
+                  >
+                    <CardContent className="py-4 flex items-start gap-4">
+                      <SevIcon className={`h-5 w-5 mt-0.5 flex-shrink-0 ${sev.color}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium">{alert.name}</span>
+                          <Badge variant={sev.badge}>{sev.label}</Badge>
+                          <Badge variant="outline">{statusConfig[alert.status as keyof typeof statusConfig]?.label ?? alert.status}</Badge>
+                        </div>
+                        {alert.conditions?.length > 0 && (
+                          <p className="text-sm text-muted-foreground mt-1">
+                            Condition: {alert.conditions[0].metric} {alert.conditions[0].operator} {alert.conditions[0].threshold}
+                          </p>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Triggered {alert.triggeredAt ? formatDistanceToNow(new Date(alert.triggeredAt), { addSuffix: true }) : "—"}
                         </p>
-                      )}
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Triggered {alert.triggeredAt ? formatDistanceToNow(new Date(alert.triggeredAt), { addSuffix: true }) : "—"}
-                      </p>
-                    </div>
-                    {alert.status === "active" && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleAcknowledge(alert.id)}>
-                            <Clock className="h-4 w-4 mr-2" />
-                            Acknowledge
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleResolve(alert.id)}>
-                            <CheckCircle className="h-4 w-4 mr-2" />
-                            Resolve
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {isExpanded
+                          ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                          : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                        {alert.status === "active" && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => e.stopPropagation()}>
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleAcknowledge(alert.id); }}>
+                                <Clock className="h-4 w-4 mr-2" />Acknowledge
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleResolve(alert.id); }}>
+                                <CheckCircle className="h-4 w-4 mr-2" />Resolve
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </div>
+                    </CardContent>
+                  </button>
+
+                  {/* Expandable root-cause panel */}
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.18 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="border-t border-border/60 mx-4 mb-4 pt-4 space-y-4">
+                          {/* Root cause */}
+                          <div className="flex items-start gap-3 rounded-lg bg-destructive/5 border border-destructive/20 px-4 py-3">
+                            <AlertCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+                            <div>
+                              <p className="text-sm font-semibold text-destructive">Root Cause</p>
+                              <p className="text-sm text-muted-foreground mt-0.5">{rootCause.cause}</p>
+                            </div>
+                          </div>
+
+                          {/* Impact */}
+                          <div className="flex items-start gap-3 rounded-lg bg-amber-500/5 border border-amber-500/20 px-4 py-3">
+                            <TrendingUp className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                            <div>
+                              <p className="text-sm font-semibold text-amber-500">Impact</p>
+                              <p className="text-sm text-muted-foreground mt-0.5">{rootCause.impact}</p>
+                            </div>
+                          </div>
+
+                          {/* Fix suggestions */}
+                          <div>
+                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                              <Lightbulb className="h-3.5 w-3.5" />Recommended Actions
+                            </p>
+                            <ol className="space-y-1.5 ml-1">
+                              {rootCause.actions.map((action, i) => (
+                                <li key={i} className="flex items-start gap-2 text-sm">
+                                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-primary text-[10px] font-bold shrink-0 mt-0.5">{i + 1}</span>
+                                  <span className="text-muted-foreground">{action}</span>
+                                </li>
+                              ))}
+                            </ol>
+                          </div>
+
+                          {/* Quick actions */}
+                          {alert.status === "active" && (
+                            <div className="flex gap-2 pt-1">
+                              <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5"
+                                onClick={() => handleAcknowledge(alert.id)}>
+                                <Clock className="h-3.5 w-3.5" />Acknowledge
+                              </Button>
+                              <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5 text-success border-success/30 hover:bg-success/10"
+                                onClick={() => handleResolve(alert.id)}>
+                                <CheckCircle className="h-3.5 w-3.5" />Mark Resolved
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
                     )}
-                  </CardContent>
+                  </AnimatePresence>
                 </Card>
               </motion.div>
             );

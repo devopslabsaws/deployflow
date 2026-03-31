@@ -11,8 +11,10 @@ using System.Collections.Concurrent;
 namespace DeployFlow.Infrastructure.BackgroundServices;
 
 /// <summary>
-/// Polls for queued deployments and orchestrates the actual build + deploy pipeline.
-/// Runs indefinitely as a hosted service, processing one deployment at a time per server.
+/// Polls for queued deployments and orchestrates the full build + deploy pipeline.
+/// Delegates the actual script generation, execution, retry logic, and smart-fixing
+/// to <see cref="IBuildService"/> â€” keeping this class focused purely on the
+/// orchestration lifecycle (state transitions, notifications, watchdog).
 /// </summary>
 public class DeploymentRunnerService : BackgroundService
 {
@@ -20,6 +22,22 @@ public class DeploymentRunnerService : BackgroundService
     private readonly ILogger<DeploymentRunnerService> _logger;
     private readonly IDeploymentLogBroadcaster _broadcaster;
     private static readonly ConcurrentDictionary<Guid, bool> _runningDeployments = new();
+
+    private static readonly TimeSpan StuckDeploymentTimeout = TimeSpan.FromMinutes(120); // 2-hour watchdog
+
+    // Tracks when each deployment was picked up so the watchdog can detect hangs
+    private static readonly ConcurrentDictionary<Guid, DateTime> _deploymentStartTimes = new();
+
+    // ── Observable runner state (used by /api/runner/status) ──────────────────
+    public static DateTime LastPollUtc { get; private set; } = DateTime.MinValue;
+    public static DateTime StartedAtUtc { get; private set; } = DateTime.MinValue;
+    public static int TotalPollCycles { get; private set; }
+    public static int TotalDeploymentsProcessed { get; private set; }
+    public static int ActiveDeploymentCount => _runningDeployments.Count;
+
+    // Heartbeat: log every 60 polls (= every 5 min at 5s intervals)
+    private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(5);
+    private DateTime _lastHeartbeat = DateTime.MinValue;
 
     public DeploymentRunnerService(
         IServiceProvider services,
@@ -31,21 +49,36 @@ public class DeploymentRunnerService : BackgroundService
         _broadcaster = broadcaster;
     }
 
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  Background loop
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("DeploymentRunner started.");
-
+        StartedAtUtc = DateTime.UtcNow;
+        _logger.LogInformation("DeploymentRunner started at {Time:u}. Polling every 5 s.", StartedAtUtc);
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
+                LastPollUtc = DateTime.UtcNow;
+                TotalPollCycles++;
+
+                // Periodic heartbeat so we know the runner is alive even when idle
+                if (DateTime.UtcNow - _lastHeartbeat > HeartbeatInterval)
+                {
+                    _logger.LogInformation(
+                        "DeploymentRunner heartbeat — cycles: {Cycles}, active: {Active}, processed: {Done}, uptime: {Up:F0}m",
+                        TotalPollCycles, _runningDeployments.Count, TotalDeploymentsProcessed,
+                        (DateTime.UtcNow - StartedAtUtc).TotalMinutes);
+                    _lastHeartbeat = DateTime.UtcNow;
+                }
+
                 await ProcessQueuedDeploymentsAsync(stoppingToken);
+                await FailStuckDeploymentsAsync(stoppingToken);
                 await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
             }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
+            catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in DeploymentRunner loop");
@@ -60,138 +93,209 @@ public class DeploymentRunnerService : BackgroundService
         using var scope = _services.CreateScope();
         var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
-        var queued = await uow.Deployments.GetActiveDeploymentsAsync(ct);
-        var queuedOnly = queued.Where(d => d.Status == DeploymentStatus.Queued).ToList();
-
-        foreach (var deployment in queuedOnly)
+        List<Deployment> queued;
+        try
         {
-            if (_runningDeployments.ContainsKey(deployment.Id)) continue;
+            var active = await uow.Deployments.GetActiveDeploymentsAsync(ct);
+            queued = active.Where(d => d.Status == DeploymentStatus.Queued).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "DeploymentRunner: DB error fetching queued deployments — is Oracle reachable?");
+            return;
+        }
+
+        if (queued.Count == 0) return; // silent — no noise when idle
+
+        _logger.LogInformation("DeploymentRunner: found {Count} queued deployment(s).", queued.Count);
+
+        foreach (var deployment in queued)
+        {
+            if (_runningDeployments.ContainsKey(deployment.Id))
+            {
+                _logger.LogDebug("DeploymentRunner: {Id} already in-flight, skipping.", deployment.Id);
+                continue;
+            }
+
             if (_runningDeployments.TryAdd(deployment.Id, true))
             {
-        _ = Task.Run(() => RunDeploymentAsync(deployment.Id, ct), ct);
+                _deploymentStartTimes[deployment.Id] = DateTime.UtcNow;
+                TotalDeploymentsProcessed++;
+
+                _logger.LogInformation(
+                    "DeploymentRunner: picked up deployment {Id} (project {ProjectId}) at {Time:u}.",
+                    deployment.Id, deployment.ProjectId, DateTime.UtcNow);
+
+                // Broadcast immediately so the UI shows the runner is alive
+                _ = _broadcaster.BroadcastLogAsync(deployment.Id,
+                    $"[{DateTime.UtcNow:HH:mm:ss}] ✅ Runner picked up deployment — starting pipeline...",
+                    "stdout");
+
+                var runTask = Task.Run(() => RunDeploymentAsync(deployment.Id, ct));
+
+                // Safety net: if the outer task itself is cancelled before the
+                // body runs, unblock the Id so the next poll can retry it.
+                _ = runTask.ContinueWith(
+                    t => _runningDeployments.TryRemove(deployment.Id, out _),
+                    TaskContinuationOptions.OnlyOnCanceled);
             }
         }
     }
 
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  Main deployment orchestrator
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
     private async Task RunDeploymentAsync(Guid deploymentId, CancellationToken ct)
     {
         using var scope = _services.CreateScope();
-        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var notification = scope.ServiceProvider.GetRequiredService<INotificationService>();
-        var git = scope.ServiceProvider.GetRequiredService<IGitService>();
-        var ssh = scope.ServiceProvider.GetRequiredService<ISshService>();
+        var uow        = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var db         = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var notif      = scope.ServiceProvider.GetRequiredService<INotificationService>();
         var encryption = scope.ServiceProvider.GetRequiredService<IEncryptionService>();
-        var blueGreen = scope.ServiceProvider.GetRequiredService<BlueGreenDeploymentService>();
+        var blueGreen  = scope.ServiceProvider.GetRequiredService<BlueGreenDeploymentService>();
 
         Deployment? deployment = null;
         try
         {
             deployment = await uow.Deployments.GetByIdAsync(deploymentId, ct);
-            if (deployment is null) return;
+            if (deployment is null)
+            {
+                _logger.LogWarning("RunDeploymentAsync: deployment {Id} not found in DB.", deploymentId);
+                return;
+            }
 
             var project = await uow.Projects.GetByIdAsync(deployment.ProjectId, ct);
-            if (project is null) return;
+            if (project is null)
+            {
+                _logger.LogWarning("RunDeploymentAsync: project {ProjectId} not found for deployment {Id}.", deployment.ProjectId, deploymentId);
+                return;
+            }
 
-            _logger.LogInformation("Starting deployment {Id} for project {Project}",
-                deploymentId, project.Name);
+            _logger.LogInformation("Starting deployment {Id} for project '{Project}' at {Time:u}",
+                deploymentId, project.Name, DateTime.UtcNow);
 
-            // Mark as building
+            // Broadcast early so UI sees activity BEFORE the first DB write
+            await _broadcaster.BroadcastLogAsync(deploymentId,
+                $"[{DateTime.UtcNow:HH:mm:ss}] \ud83d\ude80 Runner picked up deployment for '{project.Name}' (branch: {project.RepositoryBranch ?? "main"})", null, ct);
+            await _broadcaster.BroadcastLogAsync(deploymentId,
+                $"[{DateTime.UtcNow:HH:mm:ss}] \u23f3 Transitioning Queued \u2192 Building...", null, ct);
+
             deployment.Start();
             await uow.SaveChangesAsync(ct);
             await _broadcaster.BroadcastStatusAsync(deploymentId, "building", ct);
+            await notif.NotifyDeploymentStarted(deployment.TenantId, project.Id, deploymentId, project.Name, ct);
 
-            await notification.NotifyDeploymentStarted(
-                deployment.TenantId, project.Id, deploymentId, project.Name, ct);
+            await _broadcaster.BroadcastLogAsync(deploymentId,
+                $"[{DateTime.UtcNow:HH:mm:ss}] \u2705 Status: Building", null, ct);
 
-            // Get the server
+            // â”€â”€ Resolve server & SSH key â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            await _broadcaster.BroadcastLogAsync(deploymentId,
+                $"[{DateTime.UtcNow:HH:mm:ss}] \ud83d\udd0e Resolving server and SSH key...", null, ct);
+
             var server = project.ServerId.HasValue
-                ? await uow.Servers.GetByIdAsync(project.ServerId.Value, ct)
-                : null;
-
+                ? await uow.Servers.GetByIdAsync(project.ServerId.Value, ct) : null;
             if (server is null)
             {
-                await FailDeploymentAsync(deployment, project, "No server assigned to project.", uow, _broadcaster, notification, ct);
+                await FailDeploymentAsync(deployment, project,
+                    "\u274c No server assigned to this project. Assign a server in Project \u2192 Settings.",
+                    uow, _broadcaster, notif, ct);
                 return;
             }
 
-            // Get SSH key
-            SshKey? sshKey = server.SshKeyId.HasValue
-                ? await uow.SshKeys.GetByIdAsync(server.SshKeyId.Value, ct)
-                : null;
+            await _broadcaster.BroadcastLogAsync(deploymentId,
+                $"[{DateTime.UtcNow:HH:mm:ss}] \ud83d\udda5\ufe0f Target server: {server.Hostname}:{server.SshPort} ({server.Name})", null, ct);
 
+            var sshKey = server.SshKeyId.HasValue
+                ? await uow.SshKeys.GetByIdAsync(server.SshKeyId.Value, ct) : null;
             if (sshKey is null)
             {
-                await FailDeploymentAsync(deployment, project, "No SSH key configured on server.", uow, _broadcaster, notification, ct);
+                await FailDeploymentAsync(deployment, project,
+                    "\u274c No SSH key configured on server. Add an SSH key in Infrastructure \u2192 Servers.",
+                    uow, _broadcaster, notif, ct);
                 return;
             }
+
+            await _broadcaster.BroadcastLogAsync(deploymentId,
+                $"[{DateTime.UtcNow:HH:mm:ss}] \ud83d\udd11 SSH key resolved: {sshKey.Name}", null, ct);
 
             var privateKey = encryption.Decrypt(sshKey.PrivateKeyEncrypted);
 
-            // Clone / pull repo
-            await AddLogAsync(db, _broadcaster, deployment.Id, "📦 Fetching source code...", ct: ct);
-            deployment.SetDeploying();
-            await uow.SaveChangesAsync(ct);
-            await _broadcaster.BroadcastStatusAsync(deploymentId, "deploying", ct);
+            // ── Resolve env vars ──────────────────────────────────────────────────
+            var envEntries = await uow.EnvVariables.GetByProjectAsync(project.Id, ct);
 
-            // Get env vars for the project
-            var envVars = await uow.EnvVariables.GetByProjectAsync(project.Id, ct);
-            var envDict = envVars.ToDictionary(e => e.Key, e => e.Value ?? "");
+            await _broadcaster.BroadcastLogAsync(deploymentId,
+                $"[{DateTime.UtcNow:HH:mm:ss}] \ud83d\udce6 Env vars: {envEntries.Count()} variable(s)", null, ct);
 
-            // Build the deploy script
-            var deployScript = BuildDeployScript(project, envDict);
-
-            await AddLogAsync(db, _broadcaster, deployment.Id, "🔨 Running build commands...", ct: ct);
-
-            // Blue/Green strategy
+            // ── Blue/Green shortcut ────────────────────────────────────────────────
             if (deployment.Metadata.TryGetValue("strategy", out var strategy) && strategy == "blue-green")
             {
+                deployment.SetDeploying();
+                await uow.SaveChangesAsync(ct);
+                await _broadcaster.BroadcastStatusAsync(deploymentId, "deploying", ct);
+
                 var success = await blueGreen.DeployAsync(project, deployment, db, ct);
                 if (!success)
                 {
-                    await FailDeploymentAsync(deployment, project, "Blue/Green deployment failed.", uow, _broadcaster, notification, ct);
+                    await FailDeploymentAsync(deployment, project, "Blue/Green deployment failed.", uow, _broadcaster, notif, ct);
                     return;
                 }
 
-                var blueGreenUrl = project.CustomDomain is not null ? $"https://{project.CustomDomain}" : null;
-                deployment.MarkSucceeded(blueGreenUrl);
+                var bgUrl = project.CustomDomain is not null ? $"https://{project.CustomDomain}" : null;
+                deployment.MarkSucceeded(bgUrl);
                 project.RecordDeployment(deployment.Id, DeploymentStatus.Healthy);
                 await uow.SaveChangesAsync(ct);
                 await _broadcaster.BroadcastStatusAsync(deploymentId, "healthy", ct);
-                await AddLogAsync(db, _broadcaster, deployment.Id, "✅ Blue/Green deployment succeeded!", ct: ct);
-                await notification.NotifyDeploymentSucceeded(deployment.TenantId, project.Id, deploymentId, project.Name, blueGreenUrl, ct);
+                await AddLogAsync(db, _broadcaster, deployment.Id, "\u2705 Blue/Green deployment succeeded!", ct: ct);
+                await notif.NotifyDeploymentSucceeded(deployment.TenantId, project.Id, deploymentId, project.Name, bgUrl, ct);
                 _logger.LogInformation("Blue/Green deployment {Id} succeeded", deploymentId);
                 return;
             }
 
-            var result = await ssh.ExecuteCommandAsync(
-                server.IpAddress, server.SshPort, server.SshUser, privateKey,
-                deployScript, ct);
+            await AddLogAsync(db, _broadcaster, deployment.Id,
+                "\ud83d\udd27 Pipeline: clone \u2192 detect stack \u2192 build \u2192 dockerize \u2192 run \u2192 health-check", ct: ct);
 
-            if (result.ExitCode != 0 || !result.Success)
+            deployment.SetDeploying();
+            await uow.SaveChangesAsync(ct);
+            await _broadcaster.BroadcastStatusAsync(deploymentId, "deploying", ct);
+
+            // â”€â”€ Delegate build + deploy to IBuildService â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            var buildService = scope.ServiceProvider.GetRequiredService<IBuildService>();
+
+            var buildRequest = new BuildRequest(deployment, project, server, privateKey, envEntries);
+
+            var buildResult = await buildService.BuildAndDeployAsync(
+                buildRequest,
+                async (message, stream) => await AddLogAsync(db, _broadcaster, deployment.Id, message, stream, ct),
+                ct);
+
+            if (!buildResult.Success)
             {
-                await AddLogAsync(db, _broadcaster, deployment.Id,
-                    $"Deploy script failed (exit {result.ExitCode}):\n{result.StdErr}", "stderr", ct);
                 await FailDeploymentAsync(deployment, project,
-                    $"Deploy script failed (exit {result.ExitCode}):\n{result.StdErr}",
-                    uow, _broadcaster, notification, ct);
+                    buildResult.ErrorMessage ?? "Build failed.",
+                    uow, _broadcaster, notif, ct);
                 return;
             }
 
-            await AddLogAsync(db, _broadcaster, deployment.Id, result.StdOut, "stdout", ct);
+            // â”€â”€ Resolve public URL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            var publicUrl = buildResult.PublicUrl
+                         ?? (project.CustomDomain is not null ? $"https://{project.CustomDomain}" : null);
 
-            // Success
-            var url = project.CustomDomain is not null ? $"https://{project.CustomDomain}" : null;
-            deployment.MarkSucceeded(url);
+            // â”€â”€ Mark success â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            deployment.MarkSucceeded(publicUrl);
             project.RecordDeployment(deployment.Id, DeploymentStatus.Healthy);
             await uow.SaveChangesAsync(ct);
             await _broadcaster.BroadcastStatusAsync(deploymentId, "healthy", ct);
-            await AddLogAsync(db, _broadcaster, deployment.Id, "✅ Deployment succeeded!", ct: ct);
 
-            await notification.NotifyDeploymentSucceeded(
-                deployment.TenantId, project.Id, deploymentId, project.Name, url, ct);
+            await AddLogAsync(db, _broadcaster, deployment.Id,
+                publicUrl is not null
+                    ? $"âœ… Deployment succeeded!\nðŸŒ App running at: {publicUrl}"
+                    : "âœ… Deployment succeeded!", ct: ct);
 
-            _logger.LogInformation("Deployment {Id} succeeded", deploymentId);
+            await notif.NotifyDeploymentSucceeded(
+                deployment.TenantId, project.Id, deploymentId, project.Name, publicUrl, ct);
+
+            _logger.LogInformation("Deployment {Id} succeeded. URL={Url}", deploymentId, publicUrl);
         }
         catch (Exception ex)
         {
@@ -199,112 +303,101 @@ public class DeploymentRunnerService : BackgroundService
             if (deployment is not null)
             {
                 using var errScope = _services.CreateScope();
-                var errUow = errScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+                var errUow   = errScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
                 var errNotif = errScope.ServiceProvider.GetRequiredService<INotificationService>();
-                var errDeployment = await errUow.Deployments.GetByIdAsync(deploymentId, ct);
-                if (errDeployment is not null)
+                var errDep   = await errUow.Deployments.GetByIdAsync(deploymentId, ct);
+                if (errDep is not null)
                 {
-                    var project = await errUow.Projects.GetByIdAsync(errDeployment.ProjectId, ct);
-                    await FailDeploymentAsync(errDeployment, project, ex.Message, errUow, _broadcaster, errNotif, ct);
+                    var errProject = await errUow.Projects.GetByIdAsync(errDep.ProjectId, ct);
+                    await FailDeploymentAsync(errDep, errProject, ex.Message, errUow, _broadcaster, errNotif, ct);
                 }
             }
         }
         finally
         {
             _runningDeployments.TryRemove(deploymentId, out _);
+            _deploymentStartTimes.TryRemove(deploymentId, out _);
         }
     }
 
+    /// <summary>
+    /// Watchdog: marks deployments that have been running for longer than
+    /// <see cref="StuckDeploymentTimeout"/> as failed.  This catches cases where
+    /// the SSH thread hangs indefinitely (e.g. unreachable server, no TCP timeout).
+    /// </summary>
+    private async Task FailStuckDeploymentsAsync(CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        foreach (var (deploymentId, startedAt) in _deploymentStartTimes)
+        {
+            if (now - startedAt < StuckDeploymentTimeout) continue;
+
+            _logger.LogWarning("Deployment {Id} has been running for {Hours:F1}h â€” marking as failed (watchdog).",
+                deploymentId, (now - startedAt).TotalHours);
+
+            _runningDeployments.TryRemove(deploymentId, out _);
+            _deploymentStartTimes.TryRemove(deploymentId, out _);
+
+            try
+            {
+                using var scope = _services.CreateScope();
+                var uow   = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+                var notif = scope.ServiceProvider.GetRequiredService<INotificationService>();
+
+                var dep = await uow.Deployments.GetByIdAsync(deploymentId, ct);
+                if (dep is null || dep.Status is DeploymentStatus.Failed or DeploymentStatus.Cancelled
+                    or DeploymentStatus.Healthy or DeploymentStatus.Running) continue;
+
+                var project = await uow.Projects.GetByIdAsync(dep.ProjectId, ct);
+                await FailDeploymentAsync(dep, project,
+                    $"Deployment timed out after {StuckDeploymentTimeout.TotalMinutes:0} minutes (watchdog).",
+                    uow, _broadcaster, notif, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Watchdog: error failing stuck deployment {Id}", deploymentId);
+            }
+        }
+    }
+
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  Helpers
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
     private static async Task FailDeploymentAsync(
-        Deployment deployment,
-        Project? project,
-        string reason,
-        IUnitOfWork uow,
-        IDeploymentLogBroadcaster broadcaster,
-        INotificationService notification,
-        CancellationToken ct)
+        Deployment deployment, Project? project, string reason,
+        IUnitOfWork uow, IDeploymentLogBroadcaster broadcaster,
+        INotificationService notification, CancellationToken ct)
     {
         deployment.MarkFailed(reason);
-        if (project is not null)
-            project.RecordDeployment(deployment.Id, DeploymentStatus.Failed);
+        project?.RecordDeployment(deployment.Id, DeploymentStatus.Failed);
         await uow.SaveChangesAsync(ct);
         await broadcaster.BroadcastStatusAsync(deployment.Id, "failed", ct);
-
         if (project is not null)
             await notification.NotifyDeploymentFailed(
                 deployment.TenantId, project.Id, deployment.Id, project.Name, reason, ct);
     }
 
     private static async Task AddLogAsync(
-        ApplicationDbContext db,
-        IDeploymentLogBroadcaster broadcaster,
-        Guid deploymentId,
-        string message,
-        string? stream = null,
-        CancellationToken ct = default)
+        ApplicationDbContext db, IDeploymentLogBroadcaster broadcaster,
+        Guid deploymentId, string message, string? stream = null, CancellationToken ct = default)
     {
         try
         {
-            var log = new DeploymentLog
+            db.DeploymentLogs.Add(new DeploymentLog
             {
                 DeploymentId = deploymentId,
-                Message = message,
-                Level = Domain.Entities.LogLevel.Info,
-                Stream = stream,
-                Timestamp = DateTime.UtcNow
-            };
-            db.DeploymentLogs.Add(log);
+                Message      = message,
+                Level        = Domain.Entities.LogLevel.Info,
+                Stream       = stream,
+                Timestamp    = DateTime.UtcNow
+            });
             await db.SaveChangesAsync(ct);
             await broadcaster.BroadcastLogAsync(deploymentId, message, stream, ct);
         }
-        catch { /* Log failures are non-critical */ }
+        catch { /* non-critical */ }
     }
 
-    private static string BuildDeployScript(Project project, Dictionary<string, string> envVars)
-    {
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine("#!/bin/bash");
-        sb.AppendLine("set -e");
-        sb.AppendLine($"APP_DIR=\"$HOME/deployflow/{project.Slug}\"");
-        sb.AppendLine("mkdir -p \"$APP_DIR\"");
-        sb.AppendLine($"cd \"$APP_DIR\"");
-
-        // Environment exports
-        foreach (var (key, value) in envVars)
-            sb.AppendLine($"export {key}=\"{value.Replace("\"", "\\\"")}\"");
-
-        if (!string.IsNullOrEmpty(project.RepositoryUrl))
-        {
-            sb.AppendLine($"if [ -d .git ]; then");
-            sb.AppendLine($"  git fetch origin");
-            sb.AppendLine($"  git reset --hard origin/{project.RepositoryBranch ?? "main"}");
-            sb.AppendLine($"else");
-            sb.AppendLine($"  git clone --depth=1 --branch {project.RepositoryBranch ?? "main"} {project.RepositoryUrl} .");
-            sb.AppendLine($"fi");
-        }
-
-        if (!string.IsNullOrEmpty(project.InstallCommand))
-            sb.AppendLine(project.InstallCommand);
-
-        if (!string.IsNullOrEmpty(project.BuildCommand))
-            sb.AppendLine(project.BuildCommand);
-
-        if (!string.IsNullOrEmpty(project.DockerfilePath))
-        {
-            var tag = $"deployflow/{project.Slug}:latest";
-            sb.AppendLine($"docker build -f {project.DockerfilePath} -t {tag} .");
-            sb.AppendLine($"docker stop {project.Slug} 2>/dev/null || true");
-            sb.AppendLine($"docker rm {project.Slug} 2>/dev/null || true");
-
-            var portArg = project.Port.HasValue ? $"-p {project.Port}:{project.Port}" : "";
-            sb.AppendLine($"docker run -d --name {project.Slug} --restart unless-stopped {portArg} {tag}");
-        }
-        else if (!string.IsNullOrEmpty(project.StartCommand))
-        {
-            sb.AppendLine($"pkill -f \"{project.Slug}\" 2>/dev/null || true");
-            sb.AppendLine($"nohup {project.StartCommand} > /var/log/{project.Slug}.log 2>&1 &");
-        }
-
-        return sb.ToString();
-    }
+    private static string TrimLog(string? s, int max) =>
+        string.IsNullOrEmpty(s) ? "" : s.Length <= max ? s : s[..max] + "\nâ€¦ (truncated)";
 }

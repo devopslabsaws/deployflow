@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Purple rounded background -->
+  <rect width="32" height="32" rx="8" fill="#7c3aed"/>
+  <!-- Lightning bolt (deploy/flow icon) -->
+  <path d="M10 5h9l-4 9h6L9 27l3-10.5H8z" fill="white" opacity="0.95"/>
+</svg>

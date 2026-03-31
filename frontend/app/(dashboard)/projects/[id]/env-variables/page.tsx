@@ -277,17 +277,26 @@ export default function EnvVariablesPage() {
 
   return (
     <div className="space-y-6 p-6 max-w-4xl">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Link href="/projects" className="hover:text-foreground">
-          Projects
+      {/* Back button + Breadcrumb */}
+      <div className="flex items-center gap-3">
+        <Link
+          href={`/projects/${projectId}`}
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/60 bg-background text-muted-foreground hover:text-foreground hover:border-border transition-colors shrink-0"
+          title="Back to project"
+        >
+          <ArrowLeft className="h-4 w-4" />
         </Link>
-        <span>/</span>
-        <Link href={`/projects/${projectId}`} className="hover:text-foreground">
-          {(project as any)?.name ?? projectId}
-        </Link>
-        <span>/</span>
-        <span className="text-foreground font-medium">Environment Variables</span>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Link href="/projects" className="hover:text-foreground">
+            Projects
+          </Link>
+          <span>/</span>
+          <Link href={`/projects/${projectId}`} className="hover:text-foreground">
+            {(project as any)?.name ?? projectId}
+          </Link>
+          <span>/</span>
+          <span className="text-foreground font-medium">Environment Variables</span>
+        </div>
       </div>
 
       {/* Header */}

@@ -17,7 +17,10 @@ import { Label } from "@/components/ui/label";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useVolumes, useCreateVolume, useDeleteVolume, useAttachVolume, useDetachVolume } from "@/hooks/use-api";
+import { useVolumes, useCreateVolume, useDeleteVolume, useAttachVolume, useDetachVolume, useProjects, useServices } from "@/hooks/use-api";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 
@@ -42,6 +45,9 @@ export default function VolumesPage() {
   const [attachForm, setAttachForm] = useState({ projectId: "", serviceId: "", mountPath: "" });
   const [form, setForm] = useState({ name: "", mountPath: "", driver: "local" });
   const { data: volumes, isLoading } = useVolumes();
+  const { data: projects } = useProjects();
+  const projectList = projects?.data ?? [];
+  const { data: servicesList = [] } = useServices();
   const createVolume = useCreateVolume();
   const deleteVolume = useDeleteVolume();
   const attachVolume = useAttachVolume();
@@ -227,22 +233,38 @@ export default function VolumesPage() {
         <DialogContent>
           <DialogHeader><DialogTitle>Attach Volume — {attachTarget?.name}</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2">
-            <p className="text-sm text-muted-foreground">Specify exactly one attachment target (project or service).</p>
+            <p className="text-sm text-muted-foreground">Select a project or service to attach this volume to.</p>
             <div className="space-y-1.5">
-              <Label>Project ID</Label>
-              <Input
-                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+              <Label>Project</Label>
+              <Select
                 value={attachForm.projectId}
-                onChange={(e) => setAttachForm((f) => ({ ...f, projectId: e.target.value, serviceId: "" }))}
-              />
+                onValueChange={(v) => setAttachForm((f) => ({ ...f, projectId: v, serviceId: "" }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a project…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projectList.map((p: { id: string; name: string }) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>— or — Service ID</Label>
-              <Input
-                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+              <Label>— or — Service</Label>
+              <Select
                 value={attachForm.serviceId}
-                onChange={(e) => setAttachForm((f) => ({ ...f, serviceId: e.target.value, projectId: "" }))}
-              />
+                onValueChange={(v) => setAttachForm((f) => ({ ...f, serviceId: v, projectId: "" }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a service…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {servicesList.map((s: { id: string; name: string }) => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label>Mount Path (optional)</Label>

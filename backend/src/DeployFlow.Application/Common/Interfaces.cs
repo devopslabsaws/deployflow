@@ -84,6 +84,7 @@ public interface ISshService
 {
     Task<bool> TestConnectionAsync(string host, int port, string user, string privateKey, CancellationToken ct = default);
     Task<SshCommandResult> ExecuteCommandAsync(string host, int port, string user, string privateKey, string command, CancellationToken ct = default);
+    Task<SshCommandResult> ExecuteCommandStreamingAsync(string host, int port, string user, string privateKey, string command, Func<string, Task> onStdOutLine, CancellationToken ct = default);
     Task<bool> TransferFileAsync(string host, int port, string user, string privateKey, string localPath, string remotePath, CancellationToken ct = default);
 }
 
@@ -180,3 +181,86 @@ public interface IDatabaseRestoreJobService
 
     Task<bool> HasActiveRestoreAsync(Guid databaseId, CancellationToken ct = default);
 }
+
+// ── Dockerfile Generator ──────────────────────────────────────────────────────
+
+/// <summary>
+/// Detects the tech stack of a project and generates an optimised multi-stage
+/// Dockerfile as a bash heredoc segment for embedding in SSH deploy scripts.
+/// </summary>
+public interface IDockerfileGeneratorService
+{
+    /// <summary>
+    /// Generates the complete bash script segment that:
+    ///  • Detects the framework from files present in the working directory
+    ///  • Writes an optimised Dockerfile via heredoc
+    ///  • Sets the PORT environment variable to the default for the detected framework
+    ///  • Builds the Docker image with --cache-from for layer re-use
+    /// The segment is wrapped in `if [ ! -f Dockerfile ]; then ... fi` so an
+    /// existing Dockerfile is always respected.
+    /// </summary>
+    string GenerateAutoDetectScript(Project project);
+}
+
+// ── Smart Fix Engine ──────────────────────────────────────────────────────────
+
+/// <summary>
+/// Analyses a failed deploy's stderr/stdout and recommends a remediation bash
+/// snippet to prepend before the next retry attempt.
+/// Implementations register fix rules in priority order and return the first match.
+/// </summary>
+public interface ISmartFixEngine
+{
+    /// <summary>
+    /// Analyses <paramref name="stdErr"/> and <paramref name="stdOut"/> and returns
+    /// the first matching fix, or <see cref="SmartFixResult.NoFix"/> when nothing is
+    /// recognised.
+    /// </summary>
+    SmartFixResult Analyze(string stdErr, string stdOut);
+}
+
+/// <summary>A single diagnosable + auto-fixable error pattern.</summary>
+public interface IFixRule
+{
+    string Name { get; }
+    bool CanFix(string stdErr, string stdOut);
+    string GenerateFixScript(string stdErr, string stdOut);
+    string Diagnosis { get; }
+}
+
+/// <summary>Result returned by <see cref="ISmartFixEngine.Analyze"/>.</summary>
+public record SmartFixResult(bool ShouldRetry, string? FixScript, string? RuleName, string? Diagnosis)
+{
+    public static SmartFixResult NoFix => new(false, null, null, null);
+}
+
+// ── Build Service ─────────────────────────────────────────────────────────────
+
+/// <summary>
+/// Orchestrates the full build + deploy pipeline for a single deployment:
+/// source fetch → stack detection → Dockerfile generation → Docker build → container run → health-check.
+/// Each invocation is idempotent for a given deployment ID.
+/// </summary>
+public interface IBuildService
+{
+    Task<BuildResult> BuildAndDeployAsync(
+        BuildRequest request,
+        Func<string, string?, Task> logCallback,
+        CancellationToken ct = default);
+}
+
+/// <summary>All inputs the build service needs.</summary>
+public record BuildRequest(
+    Deployment                 Deployment,
+    Project                    Project,
+    Server                     Server,
+    string                     SshPrivateKey,
+    IReadOnlyList<EnvVariable> EnvVars);
+
+/// <summary>Outcome of a build + deploy attempt.</summary>
+public record BuildResult(
+    bool     Success,
+    string?  ImageTag,
+    string?  PublicUrl,
+    string?  ErrorMessage,
+    TimeSpan Duration);

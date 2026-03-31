@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useAuthStore } from "@/store/auth-store";
+import { BACKEND_BASE_URL } from "@/lib/api-client";
 import { toast } from "sonner";
 
 const registerSchema = z.object({
@@ -97,7 +98,7 @@ export default function RegisterPage() {
               variant="outline"
               className="w-full gap-2"
               type="button"
-              onClick={() => { window.location.href = `${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000"}/api/auth/github`; }}
+              onClick={() => { window.location.href = `${BACKEND_BASE_URL}/api/auth/github`; }}
             >
               <Github className="w-4 h-4" />
               Sign up with GitHub
@@ -108,7 +109,7 @@ export default function RegisterPage() {
               variant="outline"
               className="w-full gap-2"
               type="button"
-              onClick={() => { window.location.href = `${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000"}/api/auth/google`; }}
+              onClick={() => { window.location.href = `${BACKEND_BASE_URL}/api/auth/google`; }}
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24">
                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -124,7 +125,7 @@ export default function RegisterPage() {
               variant="outline"
               className="w-full gap-2"
               type="button"
-              onClick={() => { window.location.href = `${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000"}/api/auth/gitlab`; }}
+              onClick={() => { window.location.href = `${BACKEND_BASE_URL}/api/auth/gitlab`; }}
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M4.845.904a.99.99 0 0 0-.943.686L.029 13.71a1 1 0 0 0 .362 1.114l11.557 8.394a.98.98 0 0 0 1.152-.002l11.547-8.392a1 1 0 0 0 .362-1.114L21.1 1.59a.99.99 0 0 0-.943-.686H4.845z" />

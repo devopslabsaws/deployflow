@@ -30,7 +30,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { usePipelines, useStartPipelineRun } from "@/hooks/use-api";
+import { usePipelines, useStartPipelineRun, useDeletePipeline, useUpdatePipeline } from "@/hooks/use-api";
 import { formatRelativeTime, formatDuration, cn } from "@/lib/utils";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -47,6 +47,8 @@ const statusConfig: Record<PipelineStatus, { label: string; color: string; icon:
 export default function PipelinesPage() {
   const { data: pipelines, isLoading, refetch } = usePipelines();
   const startPipelineRun = useStartPipelineRun();
+  const deletePipeline = useDeletePipeline();
+  const updatePipeline = useUpdatePipeline();
   const [pendingRunIds, setPendingRunIds] = useState<string[]>([]);
 
   const pendingRunSet = useMemo(() => new Set(pendingRunIds), [pendingRunIds]);
@@ -60,6 +62,32 @@ export default function PipelinesPage() {
       toast.error("Failed to start pipeline run", { description: e.message });
     } finally {
       setPendingRunIds((prev) => prev.filter((x) => x !== id));
+    }
+  };
+
+  const handleDelete = async (pipeline: Pipeline) => {
+    if (!confirm(`Delete pipeline "${pipeline.name}"? This cannot be undone.`)) return;
+    try {
+      await deletePipeline.mutateAsync(pipeline.id);
+      toast.success(`Pipeline "${pipeline.name}" deleted.`);
+    } catch (e: any) {
+      toast.error("Failed to delete pipeline", { description: e.message });
+    }
+  };
+
+  const handleToggleEnabled = async (pipeline: Pipeline) => {
+    try {
+      await updatePipeline.mutateAsync({
+        id: pipeline.id,
+        name: pipeline.name,
+        description: pipeline.description,
+        trigger: pipeline.trigger.type,
+        cronExpression: pipeline.trigger.schedule,
+        isEnabled: !pipeline.isEnabled,
+      });
+      toast.success(`Pipeline ${pipeline.isEnabled ? "disabled" : "enabled"}.`);
+    } catch (e: any) {
+      toast.error("Failed to update pipeline", { description: e.message });
     }
   };
 
@@ -99,6 +127,8 @@ export default function PipelinesPage() {
               key={pipeline.id}
               pipeline={pipeline}
               onTrigger={() => handleTrigger(pipeline.id, pipeline.name)}
+              onDelete={() => handleDelete(pipeline)}
+              onToggleEnabled={() => handleToggleEnabled(pipeline)}
               runPending={pendingRunSet.has(pipeline.id)}
             />
           ))}
@@ -108,7 +138,13 @@ export default function PipelinesPage() {
   );
 }
 
-function PipelineCard({ pipeline, onTrigger, runPending }: { pipeline: Pipeline; onTrigger: () => void; runPending?: boolean }) {
+function PipelineCard({ pipeline, onTrigger, onDelete, onToggleEnabled, runPending }: {
+  pipeline: Pipeline;
+  onTrigger: () => void;
+  onDelete: () => void;
+  onToggleEnabled: () => void;
+  runPending?: boolean;
+}) {
   const effectiveStatus = runPending ? "running" : pipeline.status;
   const cfg = statusConfig[effectiveStatus as PipelineStatus];
   const StatusIcon = cfg.icon;
@@ -168,7 +204,7 @@ function PipelineCard({ pipeline, onTrigger, runPending }: { pipeline: Pipeline;
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem className="text-destructive">
+                  <DropdownMenuItem onClick={onDelete} className="text-destructive">
                     <Trash2 className="mr-2 w-4 h-4" />Delete
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -213,7 +249,12 @@ function PipelineCard({ pipeline, onTrigger, runPending }: { pipeline: Pipeline;
               {pipeline.lastRunAt && <span>{formatRelativeTime(pipeline.lastRunAt)}</span>}
               <Badge
                 variant="outline"
-                className={pipeline.isEnabled ? "text-success border-success/30 bg-success/10" : "text-muted-foreground"}
+                className={cn(
+                  "cursor-pointer select-none",
+                  pipeline.isEnabled ? "text-success border-success/30 bg-success/10 hover:bg-success/20" : "text-muted-foreground hover:bg-muted"
+                )}
+                onClick={onToggleEnabled}
+                title={pipeline.isEnabled ? "Click to disable" : "Click to enable"}
               >
                 {pipeline.isEnabled ? "Enabled" : "Disabled"}
               </Badge>

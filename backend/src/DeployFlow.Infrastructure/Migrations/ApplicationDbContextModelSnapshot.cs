@@ -323,8 +323,7 @@ namespace DeployFlow.Infrastructure.Migrations
                         .HasColumnType("NUMBER(10)");
 
                     b.Property<string>("AvatarUrl")
-                        .HasMaxLength(1000)
-                        .HasColumnType("NVARCHAR2(1000)");
+                        .HasColumnType("CLOB");
 
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()

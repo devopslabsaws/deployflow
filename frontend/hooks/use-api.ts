@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
 
 // Disable polling in mock mode — mock data never changes
@@ -331,6 +331,7 @@ export function useDeployments(params?: {
       } as PaginatedResponse<Deployment>;
     },
     staleTime: 30_000,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -342,7 +343,31 @@ export function useDeployment(id: string) {
       return normalizeDeployment(dto) as Deployment;
     },
     enabled: !!id,
-    staleTime: 30_000,
+    staleTime: 5_000,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return ["queued", "building", "deploying"].includes(status ?? "") ? 5_000 : false;
+    },
+  });
+}
+
+export interface RunnerStatus {
+  isRunning: boolean;
+  startedAtUtc: string | null;
+  lastPollUtc: string | null;
+  secondsSinceLastPoll: number | null;
+  totalPollCycles: number;
+  totalDeploymentsProcessed: number;
+  activeDeployments: number;
+}
+
+export function useRunnerStatus(enabled = true) {
+  return useQuery<RunnerStatus>({
+    queryKey: ["runner", "status"],
+    queryFn: () => apiClient.get<RunnerStatus>("/runner/status"),
+    enabled,
+    staleTime: 8_000,
+    refetchInterval: 10_000,
   });
 }
 
@@ -471,6 +496,7 @@ export function useRebalanceCluster() {
 export function useServers() {
   return useQuery({
     queryKey: queryKeys.servers.list(),
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       const result = await apiClient.get<any>("/servers");
       const items: any[] = Array.isArray(result) ? result : ((result as any).data ?? []);
@@ -497,7 +523,9 @@ export function useServers() {
         },
       }));
     },
-    staleTime: 60_000,
+    // Background poll every 30 s so the server list status dot recovers automatically.
+    staleTime: 15_000,
+    refetchInterval: MOCK ? false : 30_000,
   });
 }
 
@@ -526,7 +554,10 @@ export function useServer(id: string) {
       } as Server;
     },
     enabled: !!id,
-    staleTime: 60_000,
+    // Reduced from 60 s — status dot must reflect reality quickly.
+    staleTime: 10_000,
+    // Background poll every 30 s so status recovers automatically after server starts.
+    refetchInterval: MOCK ? false : 30_000,
   });
 }
 
@@ -603,9 +634,56 @@ export function useServerContainers(serverId: string, enabled = true) {
           return { id: id.substring(0, 12), name, image, status, ports };
         });
     },
+    // Gated by tab-active only — NOT by server.status (that may be a stale cached value).
+    // If the server is actually offline the exec call will fail and we show an error message.
     enabled: !!serverId && enabled,
-    staleTime: 15_000,
-    refetchInterval: enabled ? 15_000 : false,
+    staleTime: 10_000,
+    refetchInterval: enabled ? 10_000 : false,
+  });
+}
+
+export interface ServerLogLine {
+  timestamp: string;
+  message: string;
+}
+
+/**
+ * Polls live server logs via the ssh-exec endpoint.
+ * Runs `journalctl -n 80 --no-pager -o short-iso` if available,
+ * otherwise falls back to the last 80 lines of /var/log/syslog.
+ * Returns an array of {timestamp, message} objects.
+ */
+export function useServerLogs(serverId: string, enabled = true) {
+  return useQuery({
+    queryKey: [...queryKeys.servers.detail(serverId), "logs"],
+    queryFn: async (): Promise<ServerLogLine[]> => {
+      const cmd = [
+        // Docker events last 15 min
+        `echo '--- Docker events (last 15 min) ---'`,
+        `docker events --since 15m --until $(date -u +%Y-%m-%dT%H:%M:%SZ) --format '{{.Time}} [{{.Type}}] {{.Action}} {{.Actor.Attributes.name}}' 2>/dev/null | tail -40 || true`,
+        `echo '--- System logs (last 40 lines) ---'`,
+        `journalctl -n 40 --no-pager -o short-iso 2>/dev/null || tail -40 /var/log/syslog 2>/dev/null || echo '(no system log access)'`,
+      ].join(" && ");
+      const result = await apiClient.post<{ stdOut: string; stdErr: string; exitCode: number; success: boolean }>(
+        `/servers/${serverId}/exec`,
+        { command: cmd }
+      );
+      const raw = (result.stdOut ?? "") + (result.stdErr ? `\n[stderr] ${result.stdErr}` : "");
+      if (!raw.trim()) return [];
+      return raw
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          // Try to parse an ISO timestamp prefix
+          const m = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[^ ]*)\s+(.+)$/);
+          if (m) return { timestamp: m[1], message: m[2] };
+          return { timestamp: "", message: line };
+        });
+    },
+    enabled: !!serverId && enabled,
+    staleTime: 8_000,
+    refetchInterval: enabled ? 10_000 : false,
   });
 }
 
@@ -748,7 +826,8 @@ export function useTriggerBackup() {
 export function useDeleteDatabase() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => apiClient.delete(`/databases/${id}`),
+    mutationFn: ({ id, force }: { id: string; force?: boolean }) =>
+      apiClient.delete(`/databases/${id}${force ? "?force=true" : ""}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.databases.all }),
   });
 }
@@ -785,7 +864,7 @@ export function usePipelines(projectId?: string) {
       const items: any[] = Array.isArray(result) ? result : ((result as any).data ?? []);
       return items.map(normalizePipeline);
     },
-    staleTime: 60_000,
+    staleTime: 10_000,
   });
 }
 
@@ -835,6 +914,30 @@ export function useUpdatePipelineStages() {
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.detail(vars.id) });
     },
+  });
+}
+
+export function useCreatePipeline() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      name: string;
+      description?: string | null;
+      projectId: string;
+      trigger: string;
+      cronExpression?: string | null;
+    }) => apiClient.post<any>("/pipelines", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.all });
+    },
+  });
+}
+
+export function useDeletePipeline() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/pipelines/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.all }),
   });
 }
 
@@ -918,8 +1021,9 @@ export function useAlerts() {
         conditions: a.conditions ?? [],
       }));
     },
-    staleTime: 30_000,
-    refetchInterval: MOCK ? false : 30000,
+    staleTime: 15_000,
+    refetchInterval: MOCK ? false : 20_000, // poll every 20 s — alerts should be near-real-time
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -933,12 +1037,37 @@ export function useAcknowledgeAlert() {
 
 // ─── Domains ──────────────────────────────────────────────────────────────────
 
+// Backend DomainDto uses PascalCase-derived camelCase names that don't match
+// the frontend Domain type: domainName → name, isVerified → dnsVerified.
+// Normalize here so every domain hook returns a consistent Domain object.
+function normalizeDomain(dto: any): Domain {
+  return {
+    id: dto.id,
+    name: dto.domainName ?? dto.name ?? "",
+    status: (dto.status as string)?.toLowerCase() as Domain["status"],
+    serviceId: dto.serviceId,
+    isWildcard: dto.isWildcard ?? false,
+    sslEnabled: dto.sslEnabled ?? false,
+    sslExpiresAt: dto.sslExpiresAt,
+    sslProvider: dto.sslProvider ?? "letsencrypt",
+    dnsVerified: dto.isVerified ?? dto.dnsVerified ?? false,
+    redirectWww: dto.redirectWww ?? false,
+    createdAt: dto.createdAt,
+  };
+}
+
 export function useDomains() {
   return useQuery({
     queryKey: queryKeys.domains.list(),
     queryFn: async () => {
-      const result = await apiClient.get<PaginatedResponse<Domain> | Domain[]>("/domains");
-      return Array.isArray(result) ? result : ((result as PaginatedResponse<Domain>).data ?? []);
+      const result = await apiClient.get<any>("/domains");
+      // Backend wraps in PaginatedResponse: { data: { data: [...], total: ... } }
+      const items: any[] = Array.isArray(result)
+        ? result
+        : Array.isArray(result?.data)
+          ? result.data
+          : (result?.data?.data ?? result?.data ?? []);
+      return items.map(normalizeDomain);
     },
     staleTime: 60_000,
   });
@@ -1002,7 +1131,8 @@ export function useRenewDomainSsl() {
 export function useEnvVars(projectId: string) {
   return useQuery({
     queryKey: queryKeys.envVars(projectId),
-    queryFn: () => apiClient.get<EnvVariable[]>(`/projects/${projectId}/env`),
+    // Correct endpoint: GET /api/env-variables?projectId=... (not /projects/{id}/env)
+    queryFn: () => apiClient.get<EnvVariable[]>(`/env-variables`, { params: { projectId } }),
     enabled: !!projectId,
     staleTime: 60_000,
   });
@@ -1011,8 +1141,16 @@ export function useEnvVars(projectId: string) {
 export function useUpsertEnvVar(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
+    // Correct endpoint: PUT /api/env-variables (not POST /projects/{id}/env)
+    // Backend expects: { key, value, isSecret, environment, projectId }
     mutationFn: (data: Partial<EnvVariable>) =>
-      apiClient.post<EnvVariable>(`/projects/${projectId}/env`, data),
+      apiClient.put<EnvVariable>(`/env-variables`, {
+        key: data.key,
+        value: data.value ?? "",
+        isSecret: data.type === "secret",
+        environment: "Production",
+        projectId,
+      }),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: queryKeys.envVars(projectId) }),
   });
@@ -1027,9 +1165,11 @@ export function useServerMetricHistory(
 ) {
   return useQuery({
     queryKey: queryKeys.metrics(serverId, `${metric}-${timeRange}`),
+    // Correct endpoint: GET /api/monitoring/timeseries (not /servers/{id}/metrics/history)
+    // Backend params: metric (cpu|memory|disk|net-in|net-out), serverId, range (15m|1h|6h|24h)
     queryFn: () =>
-      apiClient.get<MetricSeries[]>(`/servers/${serverId}/metrics/history`, {
-        params: { metric, timeRange },
+      apiClient.get<MetricSeries[]>(`/monitoring/timeseries`, {
+        params: { metric, serverId, range: timeRange },
       }),
     enabled: !!serverId,
     staleTime: 10_000,
@@ -1254,13 +1394,20 @@ export interface CostDashboard {
 export function useCostRecords(params?: { period?: string; projectId?: string }) {
   return useQuery({
     queryKey: queryKeys.costs(params),
-    // Map backend CostRecordDto fields to the shape the old costs page expected
+    // Correct endpoint: GET /api/costs/breakdown (no plain GET /api/costs exists)
+    // Backend returns CostBreakdownDto { period, groupBy, items: CostBreakdownItem[], totalCost }
     queryFn: async () => {
-      const items = await apiClient.get<any[]>("/costs", { params });
-      return (items ?? []).map((r: any): CostRecord => ({
-        ...r,
-        provider: r.provider ?? r.resourceType ?? "server",
-        totalCost: r.totalCost ?? r.amount ?? 0,
+      const breakdown = await apiClient.get<any>("/costs/breakdown", {
+        params: { period: params?.period ?? "3m" },
+      });
+      const items: any[] = breakdown?.items ?? [];
+      return items.map((r: any): CostRecord => ({
+        id: r.label ?? r.category ?? String(Math.random()),
+        period: breakdown?.period ?? params?.period ?? "3m",
+        provider: (r.category ?? "server") as any,
+        totalCost: r.amount ?? 0,
+        currency: "USD",
+        breakdown: [],
       }));
     },
     staleTime: 5 * 60_000,
@@ -1277,25 +1424,41 @@ export function useCostDashboard(period = "3m") {
 
 // ─── Dashboard Stats ──────────────────────────────────────────────────────────
 
+export interface DailyDeploymentStat {
+  date: string;        // "yyyy-MM-dd"
+  successful: number;
+  failed: number;
+  cancelled: number;
+}
+
 export interface DashboardStats {
   totalProjects: number;
   activeDeployments: number;
   totalServers: number;
   onlineServers: number;
+  deploymentsToday: number;
   failedDeploymentsToday: number;
   successfulDeploymentsToday: number;
+  /** seconds — renamed from avgDeploymentDurationSeconds in backend JSON */
+  avgDeploymentDurationSeconds: number;
+  /** @deprecated use avgDeploymentDurationSeconds */
   avgDeploymentDuration: number;
   totalDatabases: number;
+  pendingAlerts: number;
   activeAlerts: number;
   monthlyCost: number;
+  deploymentsThisMonth: number;
+  deploymentTrend: DailyDeploymentStat[];
 }
 
 export function useDashboardStats() {
   return useQuery({
     queryKey: queryKeys.stats(),
     queryFn: () => apiClient.get<DashboardStats>("/stats/dashboard"),
-    staleTime: 30_000,
-    refetchInterval: MOCK ? false : 60000,
+    staleTime: 60_000,           // serve from cache for 1 min — avoids spinner on nav-back
+    gcTime: 10 * 60_000,         // keep in memory for 10 min
+    refetchInterval: MOCK ? false : 60_000, // background refresh every 60 s
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -1413,7 +1576,10 @@ export function useContainers(projectId?: string) {
 export function useAddDomain() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: Partial<Domain>) => apiClient.post<Domain>("/domains", data),
+    // The backend AddDomainRequest expects { domainName, sslEnabled, serviceId }
+    // The page form sends { domainName, sslEnabled } which already matches.
+    mutationFn: (data: { domainName: string; sslEnabled: boolean; serviceId?: string }) =>
+      apiClient.post<any>("/domains", data).then(normalizeDomain),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domains.all }),
   });
 }
@@ -1431,7 +1597,10 @@ export function useInviteMember() {
   return useMutation({
     mutationFn: (data: { email: string; name: string; role: string }) =>
       apiClient.post("/team/invite", data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["team"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["team"] });
+      queryClient.invalidateQueries({ queryKey: ["team", "invitations"] });
+    },
   });
 }
 
@@ -1518,6 +1687,7 @@ export function useLogs(params?: {
     queryKey: ["logs", params],
     queryFn: () => apiClient.get<LogsResponse>("/logs", { params }),
     staleTime: 5_000,
+    refetchInterval: 5_000,
   });
 }
 
@@ -1586,23 +1756,170 @@ export function useVerifyDockerHub() {
 }
 
 export function useConnectSlack() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: { webhookUrl: string }) =>
       apiClient.post<IntegrationStatus>("/integrations/slack", data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integrations", "slack"] }),
+  });
+}
+
+export function useSlackStatus() {
+  return useQuery({
+    queryKey: ["integrations", "slack"],
+    queryFn: () => apiClient.get<IntegrationStatus>("/integrations/slack"),
+  });
+}
+
+export function useDisconnectSlack() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiClient.delete("/integrations/slack"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integrations", "slack"] }),
+  });
+}
+
+export function useGitHubIntegrationStatus() {
+  return useQuery({
+    queryKey: ["integrations", "github"],
+    queryFn: () => apiClient.get<IntegrationStatus>("/integrations/github"),
+  });
+}
+
+export function useConnectGitHub() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { username: string; personalAccessToken: string }) =>
+      apiClient.post<IntegrationStatus>("/integrations/github", data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integrations", "github"] }),
+  });
+}
+
+export function useDisconnectGitHub() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiClient.delete("/integrations/github"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integrations", "github"] }),
+  });
+}
+
+export function useGitLabIntegrationStatus() {
+  return useQuery({
+    queryKey: ["integrations", "gitlab"],
+    queryFn: () => apiClient.get<IntegrationStatus>("/integrations/gitlab"),
+  });
+}
+
+export function useConnectGitLab() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { username: string; personalAccessToken: string }) =>
+      apiClient.post<IntegrationStatus>("/integrations/gitlab", data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integrations", "gitlab"] }),
+  });
+}
+
+export function useDisconnectGitLab() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiClient.delete("/integrations/gitlab"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integrations", "gitlab"] }),
+  });
+}
+
+export function useTeamsStatus() {
+  return useQuery({
+    queryKey: ["integrations", "msteams"],
+    queryFn: () => apiClient.get<IntegrationStatus>("/integrations/msteams"),
+  });
+}
+
+export function useConnectTeams() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { webhookUrl: string }) =>
+      apiClient.post<IntegrationStatus>("/integrations/msteams", data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integrations", "msteams"] }),
+  });
+}
+
+export function useDisconnectTeams() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiClient.delete("/integrations/msteams"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integrations", "msteams"] }),
   });
 }
 
 export function useConnectAws() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: { accessKeyId: string; secretAccessKey: string; region: string }) =>
       apiClient.post<IntegrationStatus>("/integrations/aws", data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integrations", "aws"] }),
+  });
+}
+
+export function useAwsStatus() {
+  return useQuery({
+    queryKey: ["integrations", "aws"],
+    queryFn: () => apiClient.get<IntegrationStatus>("/integrations/aws"),
+  });
+}
+
+export function useDisconnectAws() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiClient.delete("/integrations/aws"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integrations", "aws"] }),
   });
 }
 
 export function useConnectGrafana() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: { url: string; apiToken: string }) =>
       apiClient.post<IntegrationStatus>("/integrations/grafana", data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integrations", "grafana"] }),
+  });
+}
+
+export function useGrafanaStatus() {
+  return useQuery({
+    queryKey: ["integrations", "grafana"],
+    queryFn: () => apiClient.get<IntegrationStatus>("/integrations/grafana"),
+  });
+}
+
+export function useDisconnectGrafana() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiClient.delete("/integrations/grafana"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integrations", "grafana"] }),
+  });
+}
+
+export function useCloudflareStatus() {
+  return useQuery({
+    queryKey: ["integrations", "cloudflare"],
+    queryFn: () => apiClient.get<IntegrationStatus>("/integrations/cloudflare"),
+  });
+}
+
+export function useConnectCloudflare() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { apiToken: string; zoneId: string }) =>
+      apiClient.post<IntegrationStatus>("/integrations/cloudflare", data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integrations", "cloudflare"] }),
+  });
+}
+
+export function useDisconnectCloudflare() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiClient.delete("/integrations/cloudflare"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integrations", "cloudflare"] }),
   });
 }
 
@@ -2067,6 +2384,7 @@ export function useComposeStacks(projectId?: string) {
     queryKey: ["compose", projectId],
     queryFn: () =>
       apiClient.get<ComposeStackDto[]>("/compose", { params: projectId ? { projectId } : undefined }),
+    staleTime: 30_000,
   });
 }
 
@@ -2416,6 +2734,64 @@ export function useDeleteOutboundWebhook() {
 export function useTestOutboundWebhook() {
   return useMutation({
     mutationFn: (id: string) => apiClient.post<string>(`/insights/webhooks/${id}/test`),
+  });
+}
+
+// ─── Build Controller ─────────────────────────────────────────────────────────
+
+export interface BuildTriggerResult {
+  deploymentId: string;
+  message: string;
+}
+
+export interface BuildStatusResult {
+  deploymentId: string;
+  status: string;
+  startedAt?: string;
+  finishedAt?: string;
+  url?: string;
+  durationSeconds?: number;
+  errorMessage?: string;
+}
+
+export interface DetectStackScriptResult {
+  projectId: string;
+  projectName: string;
+  detectionScript: string;
+  stackLabels: string[];
+}
+
+export function useTriggerBuild(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data?: { branch?: string; commitSha?: string }) =>
+      apiClient.post<BuildTriggerResult>(`/projects/${projectId}/build`, data ?? {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["deployments"] });
+      qc.invalidateQueries({ queryKey: ["projects", projectId] });
+    },
+  });
+}
+
+export function useBuildStatus(deploymentId: string | null) {
+  return useQuery({
+    queryKey: ["build-status", deploymentId],
+    queryFn: () => apiClient.get<BuildStatusResult>(`/builds/${deploymentId}/status`),
+    enabled: !!deploymentId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "running" || status === "queued" ? 3000 : false;
+    },
+    staleTime: 0,
+  });
+}
+
+export function useProjectDetectScript(projectId: string | null) {
+  return useQuery({
+    queryKey: ["detect-script", projectId],
+    queryFn: () => apiClient.get<DetectStackScriptResult>(`/projects/${projectId}/detect-stack`),
+    enabled: !!projectId,
+    staleTime: 60_000,
   });
 }
 

@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { AppTopbar } from "@/components/layout/app-topbar";
+import { TokenExpiryWatcher } from "@/components/providers/token-expiry-watcher";
 import { useAuthStore } from "@/store/auth-store";
-
 export default function DashboardLayout({
   children,
 }: {
@@ -14,8 +14,8 @@ export default function DashboardLayout({
 }) {
   const authPersist = (useAuthStore as any).persist;
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [authHydrated, setAuthHydrated] = useState(() => authPersist?.hasHydrated?.() ?? true);
-  const { isAuthenticated } = useAuthStore();
+  const [authHydrated, setAuthHydrated] = useState(false);
+  const { isAuthenticated, refreshUser } = useAuthStore();
   const router = useRouter();
 
   useEffect(() => {
@@ -40,6 +40,10 @@ export default function DashboardLayout({
     if (authHydrated && !isAuthenticated) {
       router.replace("/login");
     }
+    // Refresh user from server on mount to get latest avatarUrl & profile data
+    if (authHydrated && isAuthenticated) {
+      refreshUser();
+    }
   }, [authHydrated, isAuthenticated, router]);
 
   if (!authHydrated || !isAuthenticated) {
@@ -52,6 +56,7 @@ export default function DashboardLayout({
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
+      <TokenExpiryWatcher />
       {/* Desktop sidebar — always a static flex item */}
       <div className="hidden shrink-0 md:flex">
         <AppSidebar />

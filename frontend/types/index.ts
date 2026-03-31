@@ -82,6 +82,8 @@ export interface Project {
   lastDeployedAt?: string;
   deploymentCount: number;
   activeDeploymentId?: ID;
+  lastDeploymentStatus?: string;
+  lastDeploymentId?: string;
   settings: ProjectSettings;
 }
 

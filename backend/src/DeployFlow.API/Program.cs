@@ -60,14 +60,15 @@ builder.Services
             ClockSkew = TimeSpan.Zero
         };
 
-        // Support SignalR token via query string
+        // Support token via query string for SignalR hubs and SSE endpoints (EventSource cannot send headers)
         opts.Events = new JwtBearerEvents
         {
             OnMessageReceived = ctx =>
             {
                 var token = ctx.Request.Query["access_token"];
                 var path = ctx.HttpContext.Request.Path;
-                if (!string.IsNullOrEmpty(token) && path.StartsWithSegments("/hubs"))
+                if (!string.IsNullOrEmpty(token) &&
+                    (path.StartsWithSegments("/hubs") || path.StartsWithSegments("/api/logs/stream")))
                     ctx.Token = token;
                 return Task.CompletedTask;
             }

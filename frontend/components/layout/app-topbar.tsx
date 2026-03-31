@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, Search, Settings, User, Moon, Sun, Plus, Menu } from "lucide-react";
+import { Bell, Search, Settings, User, Moon, Sun, Plus, Menu, Rocket, LogOut, HelpCircle, ChevronRight } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,6 +35,16 @@ const PAGE_TITLES: Record<string, string> = {
   volumes: "Volumes",
   services: "Services",
   "ai-assistant": "AI Assistant",
+  clusters: "Clusters",
+  compose: "Compose Stacks",
+  environments: "Environments",
+  "preview-environments": "Preview Environments",
+  "outbound-webhooks": "Outbound Webhooks",
+  "s3-destinations": "S3 Destinations",
+  insights: "Insights",
+  "audit-logs": "Audit Logs",
+  templates: "Templates",
+  onboarding: "Onboarding",
 };
 
 export function AppTopbar({ onMobileMenuToggle }: { onMobileMenuToggle?: () => void }) {
@@ -51,7 +61,9 @@ export function AppTopbar({ onMobileMenuToggle }: { onMobileMenuToggle?: () => v
 
   const segments = pathname.split("/").filter(Boolean);
   const pageKey = segments[segments.length - 1] ?? "dashboard";
+  const parentKey = segments.length > 1 ? segments[segments.length - 2] : null;
   const pageTitle = PAGE_TITLES[pageKey] ?? pageKey.charAt(0).toUpperCase() + pageKey.slice(1);
+  const parentTitle = parentKey && PAGE_TITLES[parentKey] ? PAGE_TITLES[parentKey] : null;
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -67,7 +79,7 @@ export function AppTopbar({ onMobileMenuToggle }: { onMobileMenuToggle?: () => v
   return (
     <>
       <header className="flex h-[60px] w-full shrink-0 items-center justify-between border-b border-border bg-card px-4 md:px-6">
-        {/* Left: mobile toggle + page title */}
+        {/* Left: mobile toggle + breadcrumb */}
         <div className="flex items-center gap-3">
           <Button
             variant="ghost"
@@ -77,7 +89,15 @@ export function AppTopbar({ onMobileMenuToggle }: { onMobileMenuToggle?: () => v
           >
             <Menu className="h-4.5 w-4.5" />
           </Button>
-          <h1 className="text-lg font-bold text-foreground tracking-tight">{pageTitle}</h1>
+          <div className="flex items-center gap-1.5 text-sm">
+            {parentTitle && (
+              <>
+                <span className="text-muted-foreground hidden sm:block">{parentTitle}</span>
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 hidden sm:block" />
+              </>
+            )}
+            <h1 className="text-base font-bold text-foreground tracking-tight">{pageTitle}</h1>
+          </div>
         </div>
 
         {/* Right: actions */}
@@ -137,14 +157,37 @@ export function AppTopbar({ onMobileMenuToggle }: { onMobileMenuToggle?: () => v
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-violet-500 text-[13px] font-bold text-white cursor-pointer shrink-0">
-                {user?.name?.charAt(0)?.toUpperCase() ?? "U"}
+              <button className="flex h-8 w-8 items-center justify-center rounded-full cursor-pointer shrink-0 overflow-hidden ring-2 ring-primary/30 hover:ring-primary/60 transition-all">
+                {user?.avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={user.avatarUrl}
+                    alt={user.name ?? "Avatar"}
+                    className="h-8 w-8 rounded-full object-cover"
+                  />
+                ) : (
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-violet-500 text-[13px] font-bold text-white">
+                    {user?.name?.charAt(0)?.toUpperCase() ?? "U"}
+                  </span>
+                )}
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="z-50 w-52">
               <DropdownMenuLabel className="font-normal">
-                <p className="text-sm font-semibold">{user?.name ?? "User"}</p>
-                <p className="text-xs text-muted-foreground">{user?.email ?? ""}</p>
+                <div className="flex items-center gap-2.5 mb-0.5">
+                  {user?.avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={user.avatarUrl} alt={user?.name ?? ""} className="h-8 w-8 rounded-full object-cover shrink-0" />
+                  ) : (
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-violet-500 text-[13px] font-bold text-white">
+                      {user?.name?.charAt(0)?.toUpperCase() ?? "U"}
+                    </span>
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold truncate">{user?.name ?? "User"}</p>
+                    <p className="text-xs text-muted-foreground truncate">{user?.email ?? ""}</p>
+                  </div>
+                </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => router.push("/settings")}>
@@ -160,6 +203,7 @@ export function AppTopbar({ onMobileMenuToggle }: { onMobileMenuToggle?: () => v
                 className="text-destructive focus:text-destructive"
                 onClick={() => { logout(); router.push("/login"); }}
               >
+                <LogOut className="mr-2 h-4 w-4" />
                 Sign out
               </DropdownMenuItem>
             </DropdownMenuContent>

@@ -157,3 +157,9 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 .animate-fade-in { animation: fade-in 0.2s ease-out both; }
+
+@keyframes login-appear {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.login-form-enter { animation: login-appear 0.25s ease-out both; will-change: transform, opacity; }

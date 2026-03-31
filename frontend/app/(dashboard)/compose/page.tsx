@@ -103,7 +103,7 @@ export default function ComposePage() {
   const [form, setForm] = useState({
     name: "",
     projectId: "",
-    serverId: "",
+    serverId: "auto",
     composeYaml: STARTER_YAML,
     environmentName: "production",
   });
@@ -123,7 +123,7 @@ export default function ComposePage() {
       await createStack.mutateAsync({
         name: form.name.trim(),
         projectId: form.projectId,
-        serverId: form.serverId || undefined,
+        serverId: form.serverId === "auto" ? undefined : form.serverId,
         composeYaml: form.composeYaml,
         environmentName: form.environmentName,
       });
@@ -132,7 +132,7 @@ export default function ComposePage() {
       setForm({
         name: "",
         projectId: "",
-        serverId: "",
+        serverId: "auto",
         composeYaml: STARTER_YAML,
         environmentName: "production",
       });
@@ -391,7 +391,7 @@ export default function ComposePage() {
                     <SelectValue placeholder="Auto-assign" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Auto-assign</SelectItem>
+                    <SelectItem value="auto">Auto-assign</SelectItem>
                     {servers.map((s: { id: string; name: string }) => (
                       <SelectItem key={s.id} value={s.id}>
                         {s.name}

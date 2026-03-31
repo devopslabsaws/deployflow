@@ -2,7 +2,13 @@ import axios, { AxiosInstance, AxiosRequestConfig, AxiosError } from "axios";
 import { getMockResponse } from "./mock-data";
 
 // Prefer explicit API URL, but default to Next.js same-origin proxy to avoid local port drift.
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/proxy";
+// Normalize: strip trailing slash + ensure /api suffix when a direct URL is provided.
+const _rawApiUrl = process.env.NEXT_PUBLIC_API_URL;
+// BACKEND_BASE_URL: host only, no /api — used for SignalR hubs, SSO redirects, etc.
+export const BACKEND_BASE_URL = _rawApiUrl
+  ? _rawApiUrl.replace(/\/+$/, "").replace(/\/api\/?$/, "")
+  : "http://localhost:5000";
+export const BASE_URL = BACKEND_BASE_URL + "/api";
 
 // Module-level token cache — avoids repeated JSON.parse on every HTTP request
 let _cachedAccessToken: string | null = null;
@@ -148,6 +154,26 @@ class ApiClient {
   // POST/PUT/PATCH/DELETE: always throw on error — caller must handle failures
   async post<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
     if (this.mockEnabled()) {
+      // Return a valid auth response so login/register work without a real backend.
+      if (url.includes("/auth/login") || url.includes("/auth/register")) {
+        return {
+          accessToken: "mock-access-token",
+          refreshToken: "mock-refresh-token",
+          user: {
+            id: "mock-user-1",
+            name: "Demo User",
+            email: (data as any)?.email ?? "demo@deployflow.io",
+            role: "owner",
+            tenantId: "mock-tenant-1",
+            isActive: true,
+            createdAt: "2024-01-01T00:00:00Z",
+            twoFactorEnabled: false,
+          },
+        } as T;
+      }
+      if (url.includes("/auth/refresh")) {
+        return { accessToken: "mock-access-token", refreshToken: "mock-refresh-token" } as T;
+      }
       return { id: `mock-${Date.now()}`, ...data, createdAt: new Date().toISOString() } as T;
     }
     const response = await this.instance.post<T>(url, data, config);

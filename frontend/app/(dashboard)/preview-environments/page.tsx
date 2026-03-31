@@ -126,6 +126,24 @@ export default function PreviewEnvironmentsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ projectId: "", prNumber: "", prTitle: "", branch: "" });
 
+  // Auto-fill branch when project changes
+  const handleProjectChange = (projectId: string) => {
+    const proj = projectList.find((p) => p.id === projectId) as any;
+    setForm((f) => ({
+      ...f,
+      projectId,
+      branch: proj?.defaultBranch ?? proj?.branch ?? "main",
+    }));
+  };
+
+  // Auto-suggest next PR number based on existing previews for this project
+  const suggestPrNumber = (projectId: string) => {
+    const existing = (previews ?? []).filter((p) => p.projectId === projectId || !p.projectId);
+    if (existing.length === 0) return "";
+    const max = Math.max(...existing.map((p) => p.prNumber ?? 0));
+    return String(max + 1);
+  };
+
   const { data: previews, isLoading } = usePreviewEnvironments(
     filterProject !== "all" ? filterProject : undefined
   );
@@ -275,7 +293,10 @@ export default function PreviewEnvironmentsPage() {
               <Label>Project</Label>
               <Select
                 value={form.projectId}
-                onValueChange={(v) => setForm((f) => ({ ...f, projectId: v }))}
+                onValueChange={(v) => {
+                  handleProjectChange(v);
+                  setForm((f) => ({ ...f, prNumber: suggestPrNumber(v) || f.prNumber }));
+                }}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select project" />

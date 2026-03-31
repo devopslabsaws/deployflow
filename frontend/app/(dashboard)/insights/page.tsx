@@ -104,12 +104,13 @@ export default function InsightsPage() {
   const [analyzeDeploymentId, setAnalyzeDeploymentId] = useState("");
   const [submitId, setSubmitId] = useState<string | null>(null);
 
-  const { data: insights, isLoading } = useDeploymentInsights(period);
+  const { data: insights, isLoading, isError, refetch } = useDeploymentInsights(period);
   const { data: errors, isLoading: errorsLoading } = useDeploymentErrors(submitId);
 
+  const dailyStats = insights?.dailyStats ?? [];
   const triggerData = Object.entries(insights?.deploysByTrigger ?? {}).map(([name, value]) => ({
     name,
-    value,
+    value: value as number,
   }));
 
   return (
@@ -125,6 +126,10 @@ export default function InsightsPage() {
             Trends, success rates, and smart error intelligence.
           </p>
         </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5 h-9">
+            <ChevronDown className="h-4 w-4 rotate-180" />Refresh
+          </Button>
         <Select value={period} onValueChange={setPeriod}>
           <SelectTrigger className="w-36">
             <SelectValue />
@@ -142,7 +147,17 @@ export default function InsightsPage() {
             ))}
           </SelectContent>
         </Select>
+        </div>
       </div>
+
+      {/* Error state */}
+      {isError && (
+        <div className="flex items-center gap-3 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3.5">
+          <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
+          <p className="text-sm text-destructive flex-1">Failed to load insights data. The API may be unreachable.</p>
+          <Button size="sm" variant="outline" onClick={() => refetch()}>Retry</Button>
+        </div>
+      )}
 
       {/* Summary Stats */}
       {isLoading ? (
@@ -203,13 +218,13 @@ export default function InsightsPage() {
         <CardContent>
           {isLoading ? (
             <Skeleton className="h-64 w-full" />
-          ) : (insights?.dailyStats?.length ?? 0) === 0 ? (
+          ) : dailyStats.length === 0 ? (
             <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
               No deployment data for this period.
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={insights!.dailyStats}>
+              <LineChart data={dailyStats}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                 <XAxis
                   dataKey="date"

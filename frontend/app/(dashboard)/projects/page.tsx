@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
-  Plus, Search, FolderOpen, GitBranch, Rocket, MoreVertical,
+  Plus, Search, FolderGit2, GitBranch, Rocket, MoreVertical,
   Trash2, Settings, ExternalLink, CheckCircle2, XCircle,
-  AlertTriangle, Archive, Activity, RefreshCw, Copy,
+  AlertTriangle, Archive, Activity, RefreshCw, Copy, Loader2, Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ import { CreateProjectDialog } from "@/components/projects/create-project-dialog
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 
 export default function ProjectsPage() {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [createOpen, setCreateOpen] = useState(false);
@@ -80,11 +82,12 @@ export default function ProjectsPage() {
 
   const handleDeploy = async (project: Project) => {
     try {
-      await createDeployment.mutateAsync({
+      const deployment = await createDeployment.mutateAsync({
         projectId: project.id,
         branch: project.repositoryBranch ?? "main",
       });
-      toast.success(`Deployment started for "${project.name}"!`);
+      toast.success(`Deployment started for "${project.name}" — opening logs...`);
+      router.push(`/deployments/${deployment.id}`);
     } catch (e: any) {
       toast.error("Deployment failed", { description: e.message });
     }
@@ -125,7 +128,7 @@ export default function ProjectsPage() {
         <SummaryCard
           label="Total Projects"
           value={isLoading ? null : String(projects.length)}
-          icon={FolderOpen}
+          icon={FolderGit2}
           iconClass="text-primary"
           bgClass="bg-primary/10"
         />
@@ -308,7 +311,7 @@ function ProjectCard({
           <div className="flex items-start justify-between gap-2">
             <Link href={`/projects/${project.id}`} className="flex items-center gap-3 min-w-0 flex-1">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/15 to-primary/5 border border-primary/10">
-                <FolderOpen className="h-5 w-5 text-primary" />
+                <FolderGit2 className="h-5 w-5 text-primary" />
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-semibold truncate group-hover:text-primary transition-colors">
@@ -406,18 +409,68 @@ function ProjectCard({
             </Badge>
           </div>
 
-          {/* Deploy button */}
-          {project.status === "active" && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 w-full gap-1.5 text-xs"
-              onClick={onDeploy}
-            >
-              <Rocket className="h-3 w-3" />
-              Deploy
-            </Button>
-          )}
+          {/* Deploy / Status footer */}
+          {project.status === "active" && (() => {
+            const ds = project.lastDeploymentStatus;
+            const inFlight = ds === "queued" || ds === "building" || ds === "deploying";
+            const isLive = ds === "healthy" || ds === "running";
+            const isFailed = ds === "failed";
+            const isCancelled = ds === "cancelled";
+            if (inFlight) return (
+              <div className="flex items-center justify-between rounded-lg border border-blue-500/25 bg-blue-500/8 px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-3.5 w-3.5 text-blue-400 animate-spin" />
+                  <span className="text-xs font-medium text-blue-400 capitalize">{ds}</span>
+                </div>
+                {project.lastDeploymentId ? (
+                  <Link href={`/deployments/${project.lastDeploymentId}`} className="text-[11px] text-blue-400/70 hover:text-blue-400 underline underline-offset-2">
+                    View logs
+                  </Link>
+                ) : null}
+              </div>
+            );
+            if (isLive) return (
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-xs text-emerald-400">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  <span className="font-medium">Live</span>
+                  {project.lastDeployedAt && (
+                    <span className="text-muted-foreground/60">&middot; {formatRelativeTime(project.lastDeployedAt)}</span>
+                  )}
+                </div>
+                <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={onDeploy}>
+                  <Rocket className="h-3 w-3" />Re-deploy
+                </Button>
+              </div>
+            );
+            if (isFailed) return (
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-xs text-destructive">
+                  <XCircle className="h-3.5 w-3.5" />
+                  <span className="font-medium">Failed</span>
+                </div>
+                <Button size="sm" variant="outline" className="h-7 gap-1 text-xs border-destructive/30 text-destructive hover:bg-destructive/10" onClick={onDeploy}>
+                  <RefreshCw className="h-3 w-3" />Retry
+                </Button>
+              </div>
+            );
+            if (isCancelled) return (
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <XCircle className="h-3.5 w-3.5" />
+                  <span>Cancelled</span>
+                </div>
+                <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={onDeploy}>
+                  <Rocket className="h-3 w-3" />Deploy
+                </Button>
+              </div>
+            );
+            return (
+              <Button size="sm" variant="outline" className="h-8 w-full gap-1.5 text-xs" onClick={onDeploy}>
+                <Rocket className="h-3 w-3" />Deploy
+              </Button>
+            );
+          })()}
         </CardContent>
       </Card>
     </motion.div>
@@ -430,7 +483,7 @@ function EmptyProjectsState({ onNew, hasFilter }: { onNew: () => void; hasFilter
   return (
     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/60 py-16 text-center">
       <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">
-        <FolderOpen className="h-7 w-7 text-muted-foreground/50" />
+        <FolderGit2 className="h-7 w-7 text-muted-foreground/50" />
       </div>
       <h3 className="text-sm font-semibold mb-1">
         {hasFilter ? "No matching projects" : "No projects yet"}

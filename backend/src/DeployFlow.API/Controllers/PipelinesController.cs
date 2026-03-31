@@ -89,7 +89,7 @@ public class PipelinesController : BaseController
             StartedAt = DateTime.UtcNow,
             StageCount = pipeline.Stages.Count,
             StepCount = pipeline.Stages.Sum(s => s.Steps.Count),
-            TriggeredBy = _currentUser.Email,
+            TriggeredBy = _currentUser.Name ?? _currentUser.Email,
         };
 
         pipeline.Status = Domain.Entities.PipelineStatus.Running;
