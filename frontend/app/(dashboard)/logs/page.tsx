@@ -26,47 +26,19 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { useLogs } from "@/hooks/use-api";
+import { apiClient, BASE_URL } from "@/lib/api-client";
+import { toast } from "sonner";
 
 type LogLevel = "info" | "warn" | "error" | "debug" | "all";
 
 interface LogLine {
   id: string;
   timestamp: string;
-  level: "info" | "warn" | "error" | "debug";
+  level: string;
   message: string;
-  service?: string;
+  service: string;
 }
-
-// Simulated log stream data
-const generateLogs = (count: number, offset: number = 0): LogLine[] => {
-  const levels: Array<"info" | "warn" | "error" | "debug"> = ["info", "info", "info", "warn", "error", "debug"];
-  const services = ["api", "frontend", "worker", "nginx", "postgres"];
-  const messages = [
-    "Starting HTTP server on :3000",
-    "Connected to database successfully",
-    "Processing request GET /api/health",
-    "Cache miss for key user:12345",
-    "Request completed in 23ms [200]",
-    "Worker job completed successfully",
-    "High memory usage detected: 87%",
-    "ERROR: Connection timeout after 30s",
-    "Retrying failed request (attempt 2/3)",
-    "Build step: Installing dependencies",
-    "✓ Build completed in 45.2s",
-    "Container started with ID abc123def",
-    "Health check passed",
-    "SSL certificate renewed successfully",
-    "Deployment rollout 60% complete",
-  ];
-
-  return Array.from({ length: count }, (_, i) => ({
-    id: `log-${offset + i}`,
-    timestamp: new Date(Date.now() - (count - i) * 2000).toISOString(),
-    level: levels[Math.floor(Math.random() * levels.length)],
-    message: messages[Math.floor(Math.random() * messages.length)],
-    service: services[Math.floor(Math.random() * services.length)],
-  }));
-};
 
 const levelConfig = {
   info: { badge: "bg-blue-500/10 text-blue-500 border-blue-500/30", text: "text-foreground" },
@@ -76,52 +48,161 @@ const levelConfig = {
 };
 
 export default function LogsPage() {
-  const [logs, setLogs] = useState<LogLine[]>(() => generateLogs(80));
   const [search, setSearch] = useState("");
   const [levelFilter, setLevelFilter] = useState<LogLevel>("all");
   const [serviceFilter, setServiceFilter] = useState("all");
   const [autoScroll, setAutoScroll] = useState(true);
   const [isStreaming, setIsStreaming] = useState(true);
+  const [streamedLogs, setStreamedLogs] = useState<LogLine[]>([]);
+  const [oldestCursor, setOldestCursor] = useState<number | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const esRef = useRef<EventSource | null>(null);
+  const seenIdsRef = useRef<Set<string>>(new Set());
 
-  // Simulate real-time log streaming
+  // Initial page load — fetch first batch via REST
+  const { data: initialData } = useLogs({ pageSize: 200 });
+
   useEffect(() => {
-    if (!isStreaming) return;
-    const interval = setInterval(() => {
-      const newLogs = generateLogs(1, logs.length);
-      setLogs((prev) => [...prev.slice(-500), ...newLogs]);
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [isStreaming, logs.length]);
+    if (!initialData?.items) return;
+    const newItems = initialData.items.filter((l: LogLine) => !seenIdsRef.current.has(l.id));
+    if (newItems.length === 0) return;
+    newItems.forEach((l: LogLine) => seenIdsRef.current.add(l.id));
+    setStreamedLogs((prev) => [...newItems.slice().reverse(), ...prev]);
+    if (initialData.nextCursor) setOldestCursor(initialData.nextCursor);
+    setHasMore(initialData.hasMore ?? false);
+  }, [initialData]);
+
+  // SSE stream for live tailing
+  useEffect(() => {
+    if (!isStreaming) {
+      esRef.current?.close();
+      esRef.current = null;
+      return;
+    }
+
+    const params = new URLSearchParams();
+    if (levelFilter !== "all") params.set("level", levelFilter);
+    if (serviceFilter !== "all") params.set("service", serviceFilter);
+
+    // EventSource cannot send Authorization headers — pass token as query param instead.
+    // The backend accepts `access_token` in the query string for SSE endpoints.
+    try {
+      const raw = localStorage.getItem("deployflow-auth");
+      const token = raw ? (JSON.parse(raw)?.state?.accessToken ?? null) : null;
+      if (token) params.set("access_token", token);
+    } catch { /* ignore */ }
+
+    const url = `${BASE_URL}/logs/stream?${params.toString()}`;
+    const es = new EventSource(url);
+    esRef.current = es;
+
+    es.addEventListener("log", (e) => {
+      try {
+        const log: LogLine = JSON.parse(e.data);
+        if (seenIdsRef.current.has(log.id)) return;
+        seenIdsRef.current.add(log.id);
+        setStreamedLogs((prev) => [...prev, log]);
+      } catch {
+        // ignore malformed messages
+      }
+    });
+
+    es.onerror = () => {
+      es.close();
+      esRef.current = null;
+      // brief backoff before reconnect is handled by toggling state
+    };
+
+    return () => {
+      es.close();
+      esRef.current = null;
+    };
+  }, [isStreaming, levelFilter, serviceFilter]);
 
   useEffect(() => {
     if (autoScroll && bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [logs, autoScroll]);
+  }, [streamedLogs, autoScroll]);
 
-  const filteredLogs = logs.filter((log) => {
+  const loadOlderLogs = useCallback(async () => {
+    if (!oldestCursor || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const data = await apiClient.get<{ items: LogLine[]; nextCursor: number | null; hasMore: boolean }>(
+        "/logs",
+        { params: { cursor: oldestCursor, pageSize: 200 } }
+      );
+      const newItems = data.items.filter((l) => !seenIdsRef.current.has(l.id));
+      newItems.forEach((l) => seenIdsRef.current.add(l.id));
+      setStreamedLogs((prev) => [...newItems.slice().reverse(), ...prev]);
+      setOldestCursor(data.nextCursor);
+      setHasMore(data.hasMore ?? false);
+    } catch (e: any) {
+      toast.error("Failed to load older logs", { description: e.message });
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [oldestCursor, loadingOlder]);
+
+  const filteredLogs = streamedLogs.filter((log) => {
     if (levelFilter !== "all" && log.level !== levelFilter) return false;
     if (serviceFilter !== "all" && log.service !== serviceFilter) return false;
     if (search && !log.message.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 
-  const handleDownload = () => {
-    const content = filteredLogs
-      .map((l) => `[${l.timestamp}] [${l.level.toUpperCase()}] [${l.service}] ${l.message}`)
-      .join("\n");
-    const blob = new Blob([content], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `logs-${new Date().toISOString().split("T")[0]}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleExport = async () => {
+    try {
+      const body: Record<string, unknown> = {};
+      if (levelFilter !== "all") body.level = levelFilter;
+      if (serviceFilter !== "all") body.service = serviceFilter;
+      if (search) body.search = search;
+      body.limit = 50000;
+
+      let exportToken: string | null = null;
+      try {
+        const raw = localStorage.getItem("deployflow-auth");
+        exportToken = raw ? (JSON.parse(raw)?.state?.accessToken ?? null) : null;
+      } catch { /* ignore */ }
+
+      const response = await fetch(
+        `${BASE_URL}/logs/export`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(exportToken ? { Authorization: `Bearer ${exportToken}` } : {}),
+          },
+          body: JSON.stringify(body),
+        }
+      );
+      if (!response.ok) throw new Error(`${response.status}`);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `logs-${new Date().toISOString().split("T")[0]}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast.error("Export failed", { description: e.message });
+    }
   };
 
-  const services = ["all", ...Array.from(new Set(logs.map((l) => l.service).filter(Boolean)))];
+  const services = [
+    "all",
+    ...Array.from(
+      new Set(
+        streamedLogs
+          .map((l) => l.service)
+          .filter((s): s is string => Boolean(s) && s !== "all")
+      )
+    ),
+  ];
 
   return (
     <div className="space-y-4 flex flex-col h-[calc(100vh-10rem)]">
@@ -134,8 +215,8 @@ export default function LogsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={handleDownload} className="gap-1.5">
-            <Download className="w-3.5 h-3.5" />Download
+          <Button variant="outline" size="sm" onClick={handleExport} className="gap-1.5">
+            <Download className="w-3.5 h-3.5" />Export
           </Button>
           <Button
             variant={isStreaming ? "default" : "outline"}
@@ -192,8 +273,8 @@ export default function LogsPage() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {(services as string[]).map((s) => (
-              <SelectItem key={s} value={s}>
+            {(services as string[]).map((s, idx) => (
+              <SelectItem key={`service-${s}-${idx}`} value={s}>
                 {s === "all" ? "All Services" : s}
               </SelectItem>
             ))}
@@ -234,11 +315,26 @@ export default function LogsPage() {
         </div>
 
         <div className="p-4 space-y-0.5">
-          {filteredLogs.map((log) => {
-            const cfg = levelConfig[log.level];
+          {hasMore && (
+            <div className="flex justify-center py-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-muted-foreground gap-1.5"
+                onClick={loadOlderLogs}
+                disabled={loadingOlder}
+              >
+                <ChevronDown className="w-3 h-3" />
+                {loadingOlder ? "Loading..." : "Load older logs"}
+              </Button>
+            </div>
+          )}
+
+          {filteredLogs.map((log, idx) => {
+            const cfg = levelConfig[log.level as keyof typeof levelConfig] ?? levelConfig.info;
             return (
               <div
-                key={log.id}
+                key={log.id || `${log.timestamp}-${log.service}-${idx}`}
                 className="flex items-start gap-3 py-0.5 px-2 rounded hover:bg-white/5 transition-colors log-line group"
               >
                 <span className="text-[10px] text-gray-600 shrink-0 pt-0.5 w-52">

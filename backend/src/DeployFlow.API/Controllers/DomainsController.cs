@@ -27,6 +27,22 @@ public class DomainsController : BaseController
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct = default)
         => ToResponse(await Mediator.Send(new DeleteDomainCommand(id), ct));
+
+    [HttpPost("{id:guid}/verify")]
+    public async Task<IActionResult> Verify(Guid id, CancellationToken ct = default)
+        => ToResponse(await Mediator.Send(new VerifyDomainCommand(id), ct));
+
+    [HttpPost("{id:guid}/provision-ssl")]
+    public async Task<IActionResult> ProvisionSsl(Guid id, CancellationToken ct = default)
+        => ToResponse(await Mediator.Send(new ProvisionDomainSslCommand(id), ct));
+
+    [HttpPost("{id:guid}/renew-ssl")]
+    public async Task<IActionResult> RenewSsl(Guid id, CancellationToken ct = default)
+        => ToResponse(await Mediator.Send(new RenewDomainSslCommand(id), ct));
+
+    [HttpGet("{id:guid}/dns-check")]
+    public async Task<IActionResult> DnsCheck(Guid id, CancellationToken ct = default)
+        => ToResponse(await Mediator.Send(new GetDomainDnsCheckQuery(id), ct));
 }
 
 public record AddDomainRequest(

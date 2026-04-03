@@ -1,11 +1,14 @@
 using DeployFlow.Application.Common;
 using DeployFlow.Application.DTOs;
 using DeployFlow.Application.Features.Auth.Commands;
+using DeployFlow.Domain.Entities;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Configuration;
+using System.Linq;
 
 namespace DeployFlow.API.Controllers;
 
@@ -13,10 +16,12 @@ namespace DeployFlow.API.Controllers;
 public class AuthController : BaseController
 {
     private readonly IConfiguration _config;
+    private readonly UserManager<ApplicationUser> _userManager;
 
-    public AuthController(IMediator mediator, IConfiguration config) : base(mediator)
+    public AuthController(IMediator mediator, IConfiguration config, UserManager<ApplicationUser> userManager) : base(mediator)
     {
         _config = config;
+        _userManager = userManager;
     }
 
     /// <summary>Login with email and password.</summary>
@@ -98,20 +103,38 @@ public class AuthController : BaseController
         return ToResponse(result);
     }
 
+    /// <summary>Read invitation metadata by token for the accept-invitation page.</summary>
+    [HttpGet("invitations/{token}")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> GetInvitation(string token, CancellationToken ct)
+    {
+        var result = await Mediator.Send(new GetInvitationByTokenQuery(token), ct);
+        return ToResponse(result);
+    }
+
+    /// <summary>Accept an invitation token and create the invited account.</summary>
+    [HttpPost("accept-invitation")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> AcceptInvitation([FromBody] AcceptInvitationRequest request, CancellationToken ct)
+    {
+        var result = await Mediator.Send(new AcceptInvitationCommand(request.Token, request.Name, request.Password), ct);
+        return ToResponse(result);
+    }
+
     /// <summary>Initiate GitHub OAuth sign-in.</summary>
     [HttpGet("github")]
     [EnableRateLimiting("auth")]
     public IActionResult GitHubSignIn()
     {
         var clientId    = _config["GitHub:ClientId"];
-        var callbackUrl = _config["GitHub:CallbackUrl"];
+        var callbackUrl = GetCallbackUrl("GitHub", "github");
 
         if (string.IsNullOrEmpty(clientId))
             return BadRequest(new { error = "GitHub OAuth is not configured. Set GitHub:ClientId in appsettings." });
 
         var url = "https://github.com/login/oauth/authorize" +
                   $"?client_id={Uri.EscapeDataString(clientId)}" +
-                  $"&redirect_uri={Uri.EscapeDataString(callbackUrl ?? "")}" +
+                  $"&redirect_uri={Uri.EscapeDataString(callbackUrl)}" +
                   "&scope=user:email" +
                   $"&state={Guid.NewGuid():N}";
 
@@ -134,14 +157,14 @@ public class AuthController : BaseController
     public IActionResult GoogleSignIn()
     {
         var clientId    = _config["Google:ClientId"];
-        var callbackUrl = _config["Google:CallbackUrl"];
+        var callbackUrl = GetCallbackUrl("Google", "google");
 
         if (string.IsNullOrEmpty(clientId))
             return BadRequest(new { error = "Google OAuth is not configured. Set Google:ClientId in appsettings." });
 
         var url = "https://accounts.google.com/o/oauth2/v2/auth" +
                   $"?client_id={Uri.EscapeDataString(clientId)}" +
-                  $"&redirect_uri={Uri.EscapeDataString(callbackUrl ?? "")}" +
+                  $"&redirect_uri={Uri.EscapeDataString(callbackUrl)}" +
                   "&scope=openid+email+profile" +
                   "&response_type=code" +
                   "&access_type=offline" +
@@ -166,7 +189,7 @@ public class AuthController : BaseController
     public IActionResult GitLabSignIn()
     {
         var clientId    = _config["GitLab:ClientId"];
-        var callbackUrl = _config["GitLab:CallbackUrl"];
+        var callbackUrl = GetCallbackUrl("GitLab", "gitlab");
         var baseUrl     = _config["GitLab:BaseUrl"] ?? "https://gitlab.com";
 
         if (string.IsNullOrEmpty(clientId))
@@ -174,7 +197,7 @@ public class AuthController : BaseController
 
         var url = $"{baseUrl}/oauth/authorize" +
                   $"?client_id={Uri.EscapeDataString(clientId)}" +
-                  $"&redirect_uri={Uri.EscapeDataString(callbackUrl ?? "")}" +
+                  $"&redirect_uri={Uri.EscapeDataString(callbackUrl)}" +
                   "&scope=read_user" +
                   "&response_type=code" +
                   $"&state={Guid.NewGuid():N}";
@@ -202,7 +225,7 @@ public class AuthController : BaseController
 
         if (!result.IsSuccess)
         {
-            var frontendUrl = _config["GitHub:FrontendUrl"] ?? "http://localhost:3003";
+            var frontendUrl = GetFrontendUrl();
             return Redirect($"{frontendUrl}/login?error={Uri.EscapeDataString(result.Error ?? "SSO failed")}");
         }
 
@@ -219,7 +242,7 @@ public class AuthController : BaseController
     {
         if (!string.IsNullOrEmpty(error) || string.IsNullOrEmpty(code) || string.IsNullOrEmpty(state))
         {
-            var fe = _config["GitHub:FrontendUrl"] ?? "http://localhost:3003";
+            var fe = GetFrontendUrl();
             return Redirect($"{fe}/login?error={Uri.EscapeDataString(error ?? "Missing SSO parameters")}");
         }
 
@@ -228,10 +251,42 @@ public class AuthController : BaseController
 
     // ── Shared helper ────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Returns the frontend base URL. Uses config value when set (prod env var);
+    /// otherwise derives it from the incoming request (works behind nginx which
+    /// forwards the original Host header via proxy_set_header Host $host).
+    /// </summary>
+    private string GetFrontendUrl()
+    {
+        var cfgUrl = _config["GitHub:FrontendUrl"];
+        if (!string.IsNullOrEmpty(cfgUrl)) return cfgUrl.TrimEnd('/');
+
+        var scheme = Request.Headers.TryGetValue("X-Forwarded-Proto", out var proto)
+            ? proto.ToString()
+            : Request.Scheme;
+        return $"{scheme}://{Request.Host.Value}";
+    }
+
+    /// <summary>
+    /// Returns the OAuth callback URL for the given provider. Prefers the configured
+    /// value (e.g. GitHub:CallbackUrl set via env var); falls back to constructing
+    /// it from the incoming request so it works on any host without hardcoding.
+    /// </summary>
+    private string GetCallbackUrl(string configKey, string providerPath)
+    {
+        var cfgUrl = _config[$"{configKey}:CallbackUrl"];
+        if (!string.IsNullOrEmpty(cfgUrl)) return cfgUrl;
+
+        var scheme = Request.Headers.TryGetValue("X-Forwarded-Proto", out var proto)
+            ? proto.ToString()
+            : Request.Scheme;
+        return $"{scheme}://{Request.Host.Value}/api/auth/{providerPath}/callback";
+    }
+
     private async Task<IActionResult> OAuthCallback(
         Func<Task<Result<AuthTokensDto>>> handler, string? code, string? error)
     {
-        var frontendUrl = _config["GitHub:FrontendUrl"] ?? "http://localhost:3003";
+        var frontendUrl = GetFrontendUrl();
 
         if (!string.IsNullOrEmpty(error))
             return Redirect($"{frontendUrl}/login?error={Uri.EscapeDataString(error)}");
@@ -254,5 +309,62 @@ public class AuthController : BaseController
             $"?accessToken={Uri.EscapeDataString(tokens.AccessToken)}" +
             $"&refreshToken={Uri.EscapeDataString(tokens.RefreshToken)}" +
             $"&user={userJson}");
+    }
+
+    // ── Two-Factor Authentication ────────────────────────────────────────────
+
+    /// <summary>Generate a new TOTP authenticator key and return the QR code URI.</summary>
+    [HttpGet("2fa/setup")]
+    [Authorize]
+    public async Task<IActionResult> TwoFaSetup()
+    {
+        var user = await _userManager.GetUserAsync(User);
+        if (user is null) return Unauthorized();
+
+        await _userManager.ResetAuthenticatorKeyAsync(user);
+        var key = await _userManager.GetAuthenticatorKeyAsync(user);
+        if (key is null) return StatusCode(500, new { error = "Failed to generate authenticator key." });
+
+        // Format key as groups of 4 for readability
+        var formattedKey = string.Join(" ",
+            System.Text.RegularExpressions.Regex.Matches(key.ToUpperInvariant(), ".{1,4}")
+                .Select(m => m.Value));
+
+        var issuer  = "DeployFlow";
+        var account = Uri.EscapeDataString(user.Email ?? user.UserName ?? "user");
+        var issuerE = Uri.EscapeDataString(issuer);
+        var qrUri   = $"otpauth://totp/{issuerE}:{account}?secret={key}&issuer={issuerE}&algorithm=SHA1&digits=6&period=30";
+
+        return Ok(new { secret = formattedKey, qrCodeUri = qrUri, email = user.Email });
+    }
+
+    /// <summary>Verify the TOTP code and enable 2FA for the current user.</summary>
+    [HttpPost("2fa/enable")]
+    [Authorize]
+    public async Task<IActionResult> TwoFaEnable([FromBody] Enable2FaRequest request)
+    {
+        var user = await _userManager.GetUserAsync(User);
+        if (user is null) return Unauthorized();
+
+        var provider  = _userManager.Options.Tokens.AuthenticatorTokenProvider;
+        var isValid   = await _userManager.VerifyTwoFactorTokenAsync(user, provider, request.Code.Replace(" ", "").Replace("-", ""));
+
+        if (!isValid)
+            return BadRequest(new { error = "Invalid verification code. Please try again." });
+
+        await _userManager.SetTwoFactorEnabledAsync(user, true);
+        return Ok(new { success = true, message = "Two-factor authentication has been enabled." });
+    }
+
+    /// <summary>Disable 2FA for the current user.</summary>
+    [HttpPost("2fa/disable")]
+    [Authorize]
+    public async Task<IActionResult> TwoFaDisable()
+    {
+        var user = await _userManager.GetUserAsync(User);
+        if (user is null) return Unauthorized();
+
+        await _userManager.SetTwoFactorEnabledAsync(user, false);
+        return Ok(new { success = true, message = "Two-factor authentication has been disabled." });
     }
 }

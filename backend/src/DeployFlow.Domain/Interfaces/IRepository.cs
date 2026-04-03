@@ -1,4 +1,5 @@
 using DeployFlow.Domain.Common;
+using DeployFlow.Domain.Entities;
 using System.Linq.Expressions;
 
 namespace DeployFlow.Domain.Interfaces;
@@ -22,6 +23,11 @@ public interface IUnitOfWork : IDisposable
     IServerRepository Servers { get; }
     IServiceRepository Services { get; }
     IDatabaseRepository Databases { get; }
+    IDatabaseBackupRepository DatabaseBackups { get; }
+    ITenantRepository<S3Destination> S3Destinations { get; }
+    ITenantRepository<BackupPolicy> BackupPolicies { get; }
+    ITenantRepository<RestoreJob> RestoreJobs { get; }
+    ITenantRepository<TeamInvitation> TeamInvitations { get; }
     IPipelineRepository Pipelines { get; }
     IAuditLogRepository AuditLogs { get; }
     IAlertRepository Alerts { get; }
@@ -32,6 +38,17 @@ public interface IUnitOfWork : IDisposable
     IDomainRepository Domains { get; }
     IEnvVariableRepository EnvVariables { get; }
     INotificationConfigRepository NotificationConfigs { get; }
+    IAlertRuleRepository AlertRules { get; }
+    ITenantRepository<ProjectEnvironment> Environments { get; }
+    ITenantRepository<ComposeStack> ComposeStacks { get; }
+    ITenantRepository<TraefikRouter> TraefikRouters { get; }
+    ITenantRepository<ProvisioningJob> ProvisioningJobs { get; }
+    ITenantRepository<RecoveryRule> RecoveryRules { get; }
+    ITenantRepository<PreviewEnvironment> PreviewEnvironments { get; }
+    ITenantRepository<ProjectDeploymentEnvironment> ProjectDeploymentEnvironments { get; }
+    ITenantRepository<OutboundWebhookConfig> OutboundWebhooks { get; }
+    ITenantRepository<PolicyTemplate> PolicyTemplates { get; }
+    ITenantRepository<ProjectSlo> ProjectSlos { get; }
 
     Task<int> SaveChangesAsync(CancellationToken ct = default);
     Task BeginTransactionAsync(CancellationToken ct = default);

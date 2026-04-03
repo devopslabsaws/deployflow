@@ -82,6 +82,8 @@ export interface Project {
   lastDeployedAt?: string;
   deploymentCount: number;
   activeDeploymentId?: ID;
+  lastDeploymentStatus?: string;
+  lastDeploymentId?: string;
   settings: ProjectSettings;
 }
 
@@ -141,6 +143,16 @@ export interface Deployment {
   isRollback: boolean;
   metadata?: Record<string, any>;
   errorMessage?: string;
+  // Approval
+  approvalStatus?: "NotRequired" | "Pending" | "Approved" | "Rejected";
+  approvedBy?: string;
+  approvedAt?: string;
+  approvalNotes?: string;
+  // Canary
+  canaryStatus?: "None" | "Running" | "Promoted" | "Aborted";
+  canaryTrafficPercent?: number;
+  canaryStepDurationMinutes?: number;
+  canaryStartedAt?: string;
 }
 
 // ============================================================
@@ -148,7 +160,7 @@ export interface Deployment {
 // ============================================================
 
 export type ServerStatus = "online" | "offline" | "provisioning" | "maintenance" | "error";
-export type ServerProvider = "custom" | "aws" | "azure" | "gcp" | "digitalocean" | "hetzner" | "vultr";
+export type ServerProvider = "local" | "custom" | "aws" | "azure" | "gcp" | "digitalocean" | "hetzner" | "vultr";
 
 export interface Server {
   id: ID;
@@ -173,6 +185,8 @@ export interface Server {
   lastHealthCheckAt?: string;
   metrics?: ServerMetrics;
   sshKeyId?: ID;
+  isCordoned?: boolean;
+  isDraining?: boolean;
 }
 
 export interface ServerMetrics {
@@ -216,10 +230,29 @@ export interface Service {
   resources: ResourceLimits;
   healthCheck?: HealthCheck;
   replicas: number;
+  minReplicas?: number;
+  maxReplicas?: number;
+  cpuTargetPercentage?: number;
+  memoryTargetPercentage?: number;
+  lastScalingAction?: string;
+  lastScalingReason?: string;
+  lastScaledAt?: string;
   domainId?: ID;
   createdAt: string;
   updatedAt: string;
   containerId?: string;
+}
+
+export interface ServiceScalingPolicy {
+  serviceId: ID;
+  currentReplicas: number;
+  minReplicas: number;
+  maxReplicas: number;
+  cpuTargetPercentage?: number;
+  memoryTargetPercentage?: number;
+  lastScalingAction?: string;
+  lastScalingReason?: string;
+  lastScaledAt?: string;
 }
 
 export interface ServicePort {
@@ -413,6 +446,50 @@ export interface Domain {
   createdAt: string;
 }
 
+export interface DomainDnsCheckResult {
+  domainId: ID;
+  domainName: string;
+  isValid: boolean;
+  status: "verified" | "pending";
+  message: string;
+  expectedTarget: string;
+  resolvedAddresses: string[];
+  checkedAt: string;
+}
+
+export interface DomainSslActionResult {
+  domainId: ID;
+  domainName: string;
+  sslEnabled: boolean;
+  sslExpiresAt?: string;
+  status: DomainStatus | string;
+  message: string;
+}
+
+export interface AlertRule {
+  id: ID;
+  name: string;
+  metric: string;
+  operator: ">" | ">=" | "<" | "<=" | "=" | "!=";
+  threshold: number;
+  windowMinutes: number;
+  severity: "critical" | "warning" | "info";
+  isEnabled: boolean;
+  cooldownMinutes: number;
+  lastTriggeredAt?: string;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AlertRuleTestResult {
+  ruleId: ID;
+  triggered: boolean;
+  sampleValue: number;
+  message: string;
+  alertId?: ID;
+}
+
 // ============================================================
 // Team & RBAC
 // ============================================================
@@ -426,16 +503,60 @@ export interface TeamMember {
   permissions: Permission[];
 }
 
+export interface TeamInvitation {
+  id: ID;
+  email: string;
+  name: string;
+  role: UserRole | string;
+  status: "pending" | "expired";
+  expiresAt: string;
+  lastSentAt: string;
+  resendCount: number;
+  invitedByName: string;
+  createdAt: string;
+}
+
+export interface InvitationPreview {
+  email: string;
+  name: string;
+  role: UserRole | string;
+  expiresAt: string;
+}
+
 export interface Permission {
   resource: string;
   actions: string[];
+}
+
+export interface PermissionGrant {
+  id: ID;
+  userId: ID;
+  resourceType: string;
+  resourceId: ID;
+  actions: string[];
+}
+
+export interface PermissionPreview {
+  userId: ID;
+  resourceType: string;
+  resourceId: ID;
+  effectiveActions: string[];
 }
 
 // ============================================================
 // Notifications
 // ============================================================
 
-export type NotificationChannel = "email" | "slack" | "webhook" | "discord" | "telegram";
+export type NotificationChannel =
+  | "email"
+  | "slack"
+  | "webhook"
+  | "discord"
+  | "telegram"
+  | "msteams"
+  | "github"
+  | "gitlab"
+  | "cloudflare";
 
 export interface NotificationConfig {
   id: ID;
@@ -497,4 +618,63 @@ export interface AuditLog {
   userAgent?: string;
   metadata?: Record<string, any>;
   createdAt: string;
+}
+
+// ============================================================
+// S3 Destination
+// ============================================================
+
+export type S3DestinationStatus = "unconfigured" | "active" | "error";
+
+export interface S3Destination {
+  id: ID;
+  name: string;
+  description?: string;
+  endpoint: string;
+  bucketName: string;
+  region?: string;
+  isDefault: boolean;
+  status: S3DestinationStatus;
+  lastTestedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================================
+// Backup Policy
+// ============================================================
+
+export interface BackupPolicy {
+  id: ID;
+  databaseInstanceId: ID;
+  isEnabled: boolean;
+  cronExpression: string;
+  retentionDays: number;
+  s3DestinationId?: ID;
+  storageLocation: "local" | "s3";
+  lastRunAt?: string;
+  nextRunAt?: string;
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================================
+// Restore Job
+// ============================================================
+
+export type RestoreJobStatus = "pending" | "running" | "success" | "failed" | "cancelled";
+
+export interface RestoreJob {
+  id: ID;
+  databaseInstanceId: ID;
+  backupId: ID;
+  targetDatabaseName: string;
+  status: RestoreJobStatus;
+  startedAt?: string;
+  completedAt?: string;
+  errorMessage?: string;
+  progressPercent?: number;
+  createdAt: string;
+  updatedAt: string;
 }

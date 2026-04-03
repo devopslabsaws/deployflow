@@ -1,28 +1,32 @@
 
-#ignore thumbnails created by windows
-Thumbs.db
-#Ignore files build by Visual Studio
-*.obj
-*.bin
-*.exe
-*.pdb
-*.user
-*.aps
-*.pch
-*.vspscc
-*_i.c
-*_p.c
-*.ncb
-*.suo
-*.tlb
-*.tlh
-*.bak
-*.cache
-*.ilk
-*.log
-*.lib
-*.sbr
-bin/
-obj/
+# Next.js
+.next/
 node_modules/
+out/
+
+# .NET build output
+**/bin/
+**/obj/
+**/publish_new/
+**/publish_temp*/
+
+# Logs
+*.log
+backend-run.txt
+backend/api-logs.txt
+backend/api-errors.txt
+backend/api2-logs.txt
+backend/api2-errors.txt
+
+# OS files
+.DS_Store
 frontend/node_modules/
+
+# Secrets — never commit
+frontend/.env.local
+infra/server.env
+
+# TypeScript incremental build info
+frontend/tsconfig.tsbuildinfo
+frontend/dev-output*.txt
+frontend/dev3014.txt

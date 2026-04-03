@@ -3,9 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard, FolderOpen, Rocket, Server, ScrollText, GitBranch,
-  Database, Activity, Settings, Bot, ChevronLeft, ChevronRight,
-  Users, Shield, Bell, DollarSign, Globe, HardDrive, Layers, Zap, Package,
+  LayoutDashboard, FolderGit2, Rocket, Server, ScrollText,
+  Database, BarChart3, Settings, Bot, ChevronLeft, ChevronRight,
+  Users, ShieldCheck, BellDot, CircleDollarSign, Globe, HardDrive,
+  Boxes, Zap, Package, Network, BookTemplate, GitMerge,
+  GitPullRequestArrow, Webhook, Layers, Cpu, Activity,
+  FileSearch2, LogsIcon, Compass, TrendingUp, Container,
+  Cloud, Waypoints, AreaChart, GitCompare, KeyRound, FlaskConical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -29,43 +33,58 @@ const navGroups: NavGroup[] = [
     label: "Overview",
     items: [
       { label: "Dashboard",    href: "/dashboard",    icon: LayoutDashboard },
-      { label: "AI Assistant", href: "/ai-assistant", icon: Bot, badge: "New", badgeColor: "bg-primary text-primary-foreground" },
+      { label: "AI Assistant", href: "/ai-assistant", icon: Bot, badge: "AI", badgeColor: "bg-violet-500 text-white" },
+      { label: "Onboarding",   href: "/onboarding",   icon: Compass, badge: "Start", badgeColor: "bg-emerald-500 text-white" },
+      { label: "Insights",     href: "/insights",     icon: AreaChart },
     ],
   },
   {
     label: "Applications",
     items: [
-      { label: "Projects",    href: "/projects",    icon: FolderOpen },
-      { label: "Deployments", href: "/deployments", icon: Rocket },
-      { label: "Services",    href: "/services",    icon: Package },
+      { label: "Projects",          href: "/projects",              icon: FolderGit2 },
+      { label: "Deployments",       href: "/deployments",           icon: Rocket },
+      { label: "Services",          href: "/services",              icon: Package },
+      { label: "Templates",         href: "/templates",             icon: BookTemplate, badge: "New", badgeColor: "bg-primary text-primary-foreground" },
+      { label: "Environments",      href: "/environments",          icon: Layers },
+      { label: "Preview Envs",      href: "/preview-environments",  icon: GitPullRequestArrow },
+      { label: "Ephemeral Envs",    href: "/ephemeral-envs",        icon: FlaskConical, badge: "New", badgeColor: "bg-violet-500/20 text-violet-400" },
+      { label: "Blue/Green",        href: "/blue-green",            icon: GitCompare },
+      { label: "Outbound Webhooks", href: "/outbound-webhooks",     icon: Webhook },
+      { label: "Compose",           href: "/compose",               icon: GitMerge },
     ],
   },
   {
     label: "Infrastructure",
     items: [
-      { label: "Servers",    href: "/servers",    icon: Server },
-      { label: "Containers", href: "/containers", icon: Layers },
-      { label: "Databases",  href: "/databases",  icon: Database },
-      { label: "Domains",    href: "/domains",    icon: Globe },
-      { label: "Volumes",    href: "/volumes",    icon: HardDrive },
+      { label: "Servers",         href: "/servers",         icon: Server },
+      { label: "Clusters",        href: "/clusters",        icon: Network },
+      { label: "Containers",      href: "/containers",      icon: Boxes },
+      { label: "Databases",       href: "/databases",       icon: Database },
+      { label: "S3 Destinations", href: "/s3-destinations", icon: Cloud },
+      { label: "Domains",         href: "/domains",         icon: Globe },
+      { label: "Volumes",         href: "/volumes",         icon: HardDrive },
     ],
   },
   {
     label: "Operations",
     items: [
-      { label: "Pipelines",  href: "/pipelines",  icon: GitBranch },
-      { label: "Logs",       href: "/logs",       icon: ScrollText },
-      { label: "Monitoring", href: "/monitoring", icon: Activity },
-      { label: "Alerts",     href: "/alerts",     icon: Bell },
+      { label: "Pipelines",     href: "/pipelines",     icon: Waypoints },
+      { label: "Auto-Scaling",   href: "/auto-scaling",   icon: Zap },
+      { label: "Observability",  href: "/observability",  icon: Activity },
+      { label: "Logs",           href: "/logs",           icon: ScrollText },
+      { label: "Monitoring",     href: "/monitoring",     icon: TrendingUp },
+      { label: "Alerts",         href: "/alerts",         icon: BellDot },
     ],
   },
   {
     label: "Management",
     items: [
-      { label: "Team",         href: "/team",      icon: Users },
-      { label: "Security",     href: "/security",  icon: Shield },
-      { label: "Cost Monitor", href: "/costs",     icon: DollarSign },
-      { label: "Settings",     href: "/settings",  icon: Settings },
+      { label: "Team",          href: "/team",            icon: Users },
+      { label: "Security",      href: "/security",        icon: ShieldCheck },
+      { label: "Secret Mgmt",   href: "/secret-management", icon: KeyRound },
+      { label: "Cost Monitor", href: "/costs",      icon: CircleDollarSign },
+      { label: "Audit Logs",   href: "/audit-logs", icon: FileSearch2 },
+      { label: "Settings",     href: "/settings",   icon: Settings },
     ],
   },
 ];
@@ -78,10 +97,13 @@ export function AppSidebar({ onNavClick }: { onNavClick?: () => void }) {
   // Compute dynamic badges from live stats
   const dynamicBadge = (href: string): Pick<NavItem, "badge" | "badgeColor"> => {
     if (href === "/projects" && stats?.totalProjects) {
-      return { badge: String(stats.totalProjects), badgeColor: "bg-primary text-primary-foreground" };
+      return { badge: String(stats.totalProjects), badgeColor: "bg-primary/20 text-primary" };
     }
     if (href === "/alerts" && stats?.activeAlerts) {
       return { badge: String(stats.activeAlerts), badgeColor: "bg-destructive text-destructive-foreground" };
+    }
+    if (href === "/servers" && stats?.onlineServers !== undefined && stats?.totalServers !== undefined) {
+      return { badge: `${stats.onlineServers}/${stats.totalServers}`, badgeColor: stats.onlineServers === stats.totalServers ? "bg-emerald-500/20 text-emerald-600" : "bg-amber-500/20 text-amber-600" };
     }
     return {};
   };
@@ -101,15 +123,15 @@ export function AppSidebar({ onNavClick }: { onNavClick?: () => void }) {
           "flex h-[60px] shrink-0 items-center border-b border-sidebar-border",
           isCollapsed ? "justify-center px-0" : "px-[18px] gap-[10px]"
         )}>
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
-            <Zap className="h-[18px] w-[18px] text-primary-foreground" />
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-violet-600 shadow-sm">
+            <Zap className="h-[18px] w-[18px] text-white" />
           </div>
           {!isCollapsed && (
             <div className="min-w-0">
               <p className="text-[15px] font-bold leading-tight text-sidebar-foreground truncate">
                 DeployFlow
               </p>
-              <p className="text-[11px] leading-tight text-muted-foreground truncate">
+              <p className="text-[10px] leading-tight text-muted-foreground truncate uppercase tracking-wider">
                 Enterprise Platform
               </p>
             </div>

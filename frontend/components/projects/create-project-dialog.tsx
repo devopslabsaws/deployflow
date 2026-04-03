@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2, GitBranch, Github, Globe, Server } from "lucide-react";
+import { Loader2, GitBranch, Github, Globe, Server, RefreshCw, Wand2, CheckCircle2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -27,7 +27,33 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useCreateProject, useServers } from "@/hooks/use-api";
+import type { DetectedStackDto } from "@/hooks/use-api";
+import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
+
+async function fetchRepoBranches(repoUrl: string): Promise<string[]> {
+  const githubMatch = repoUrl.match(/github\.com\/([^/]+)\/([^/?.#]+)/);
+  const gitlabMatch = repoUrl.match(/gitlab\.com\/([^/]+(?:\/[^/]+)*)\/([^/?.#]+)/);
+
+  if (githubMatch) {
+    const [, owner, repo] = githubMatch;
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo.replace(/\.git$/, "")}/branches?per_page=100`);
+    if (!res.ok) throw new Error("Could not fetch branches — repository may be private or not found.");
+    const data = await res.json();
+    return (data as any[]).map((b) => b.name as string);
+  }
+
+  if (gitlabMatch) {
+    const [, namespace, repo] = gitlabMatch;
+    const encoded = encodeURIComponent(`${namespace}/${repo.replace(/\.git$/, "")}`);
+    const res = await fetch(`https://gitlab.com/api/v4/projects/${encoded}/repository/branches?per_page=100`);
+    if (!res.ok) throw new Error("Could not fetch branches — repository may be private or not found.");
+    const data = await res.json();
+    return (data as any[]).map((b) => b.name as string);
+  }
+
+  throw new Error("Unsupported URL. Only GitHub and GitLab are supported.");
+}
 
 const schema = z.object({
   name: z
@@ -68,6 +94,55 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
   } = useForm<FormData>({ resolver: zodResolver(schema), defaultValues: { autoDeployEnabled: true, repositoryBranch: "main" } });
 
   const autoDeployEnabled = watch("autoDeployEnabled");
+  const repositoryUrl = watch("repositoryUrl");
+
+  const [branches, setBranches] = useState<string[]>([]);
+  const [fetchingBranches, setFetchingBranches] = useState(false);
+  const [detectingStack, setDetectingStack] = useState(false);
+  const [detectedStack, setDetectedStack] = useState<DetectedStackDto | null>(null);
+
+  async function handleDetectStack() {
+    if (!repositoryUrl) return;
+    setDetectingStack(true);
+    setDetectedStack(null);
+    try {
+      const branch = watch("repositoryBranch") || "main";
+      const result = await apiClient.post<DetectedStackDto>(
+        "/stack-detection/detect-from-url",
+        { repositoryUrl, branch }
+      );
+      setDetectedStack(result);
+      if (result.buildCommand) setValue("buildCommand", result.buildCommand);
+      if (result.startCommand) setValue("startCommand", result.startCommand);
+      if (result.defaultPort) setValue("port", result.defaultPort);
+      toast.success(`Detected: ${result.framework}`, {
+        description: result.explanation,
+      });
+    } catch (e: any) {
+      toast.error("Stack detection failed", {
+        description: e?.response?.data?.error ?? e?.message ?? "Unknown error",
+      });
+    } finally {
+      setDetectingStack(false);
+    }
+  }
+
+  async function handleFetchBranches() {
+    if (!repositoryUrl) return;
+    setFetchingBranches(true);
+    try {
+      const result = await fetchRepoBranches(repositoryUrl);
+      setBranches(result);
+      if (result.length > 0 && !result.includes(watch("repositoryBranch") ?? "main")) {
+        setValue("repositoryBranch", result[0]);
+      }
+      toast.success(`Fetched ${result.length} branch${result.length !== 1 ? "es" : ""}`);
+    } catch (e: any) {
+      toast.error("Failed to fetch branches", { description: e.message });
+    } finally {
+      setFetchingBranches(false);
+    }
+  }
 
   const onSubmit = async (data: FormData) => {
     try {
@@ -166,29 +241,92 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
             <TabsContent value="repository" className="space-y-4 mt-4">
               <div className="space-y-2">
                 <Label htmlFor="repoUrl">Repository URL</Label>
-                <div className="relative">
-                  <Github className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    id="repoUrl"
-                    placeholder="https://github.com/user/repo"
-                    className="pl-9"
-                    {...register("repositoryUrl")}
-                  />
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Github className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      id="repoUrl"
+                      placeholder="https://github.com/owner/repo"
+                      className="pl-9"
+                      {...register("repositoryUrl")}
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    disabled={!repositoryUrl || detectingStack}
+                    onClick={handleDetectStack}
+                    title="Auto-detect tech stack"
+                  >
+                    {detectingStack ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Wand2 className="h-4 w-4" />
+                    )}
+                  </Button>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Formats: <code className="bg-muted px-1 rounded font-mono text-[10px]">https://github.com/owner/repo</code> · <code className="bg-muted px-1 rounded font-mono text-[10px]">https://gitlab.com/owner/repo.git</code>
+                </p>
                 {errors.repositoryUrl && (
                   <p className="text-xs text-destructive">{errors.repositoryUrl.message}</p>
+                )}
+                {detectedStack && (
+                  <div className="flex items-center gap-2 rounded-md border border-green-500/30 bg-green-500/10 px-3 py-1.5">
+                    <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                    <span className="text-sm font-medium text-green-600 dark:text-green-400">
+                      Detected: {detectedStack.framework}
+                    </span>
+                    <span className="text-xs text-muted-foreground ml-1">
+                      — port {detectedStack.defaultPort}
+                    </span>
+                  </div>
                 )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="branch">Default Branch</Label>
-                <div className="relative">
-                  <GitBranch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    id="branch"
-                    placeholder="main"
-                    className="pl-9"
-                    {...register("repositoryBranch")}
-                  />
+                <div className="flex gap-2">
+                  {branches.length > 0 ? (
+                    <Select
+                      value={watch("repositoryBranch") ?? "main"}
+                      onValueChange={(v) => setValue("repositoryBranch", v)}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <GitBranch className="h-4 w-4 text-muted-foreground mr-2" />
+                        <SelectValue placeholder="Select branch..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {branches.map((b) => (
+                          <SelectItem key={b} value={b}>{b}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="relative flex-1">
+                      <GitBranch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        id="branch"
+                        placeholder="main"
+                        className="pl-9"
+                        {...register("repositoryBranch")}
+                      />
+                    </div>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    disabled={!repositoryUrl || fetchingBranches}
+                    onClick={handleFetchBranches}
+                    title="Fetch branches from repository"
+                  >
+                    {fetchingBranches ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4" />
+                    )}
+                  </Button>
                 </div>
               </div>
               <div className="flex items-center justify-between rounded-lg border p-3">

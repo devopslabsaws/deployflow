@@ -96,8 +96,9 @@ Invoke-Scp "$ROOT\infra"           "$DEST/"
 Invoke-Scp "$ROOT\docker-compose.yml" "$DEST/"
 
 # ── Step 3: Upload .env ───────────────────────────────────────────────────────
-Write-Host "`n[3/6] Uploading .env..." -ForegroundColor Yellow
+Write-Host "`n[3/6] Uploading .env (secrets)..." -ForegroundColor Yellow
 Invoke-Scp "$ROOT\infra\server.env" "$DEST/.env"
+Write-Host "  .env uploaded." -ForegroundColor Green
 
 # ── Step 4: Configure nginx ───────────────────────────────────────────────────
 Write-Host "`n[4/6] Configuring nginx..." -ForegroundColor Yellow
@@ -110,14 +111,18 @@ sudo nginx -t && sudo systemctl reload nginx
 
 # ── Step 5: Build & start containers ─────────────────────────────────────────
 Write-Host "`n[5/6] Building and starting Docker containers..." -ForegroundColor Yellow
-Write-Host "      NOTE: First run pulls Oracle XE (~2 GB) and builds images." -ForegroundColor DarkYellow
-Write-Host "      This will take 5-15 minutes." -ForegroundColor DarkYellow
-Invoke-Ssh "cd $DEST && docker compose pull redis && docker compose up --build -d"
+Write-Host "      Rebuilding api + frontend images; oracle/redis data volumes preserved." -ForegroundColor DarkYellow
+Write-Host "      This will take 5-10 minutes on first build." -ForegroundColor DarkYellow
+Invoke-Ssh "cd $DEST && docker compose build --no-cache api frontend && docker compose up -d --force-recreate api frontend oracle redis"
 
 # ── Step 6: Health check ──────────────────────────────────────────────────────
-Write-Host "`n[6/6] Waiting 30 seconds then checking container status..." -ForegroundColor Yellow
-Start-Sleep -Seconds 30
-Invoke-Ssh "cd $DEST && docker compose ps"
+Write-Host "`n[6/6] Waiting 60 seconds then checking container status..." -ForegroundColor Yellow
+Invoke-Ssh "cd $DEST && sleep 60 && docker compose ps"
+Invoke-Ssh "cd $DEST && docker compose ps | grep -E '(unhealthy|Exit|Restarting)' && docker compose logs --tail=40 api 2>&1 | tail -40 || echo 'All containers healthy.'"
+
+# Show frontend logs to catch static-file / startup errors
+Write-Host "`n  Frontend logs (last 30 lines):" -ForegroundColor DarkYellow
+Invoke-Ssh "cd $DEST && docker compose logs --tail=30 frontend 2>&1 || true"
 
 Write-Host ""
 Write-Host "==================================================" -ForegroundColor Green

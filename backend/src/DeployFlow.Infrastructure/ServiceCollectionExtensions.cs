@@ -1,10 +1,12 @@
 using DeployFlow.Application.Common;
+using DeployFlow.Application.Services;
 using DeployFlow.Domain.Entities;
 using DeployFlow.Domain.Interfaces;
 using DeployFlow.Infrastructure.BackgroundServices;
 using DeployFlow.Infrastructure.Identity;
 using DeployFlow.Infrastructure.Persistence;
 using DeployFlow.Infrastructure.Persistence.Repositories;
+using DeployFlow.Infrastructure.Repositories;
 using DeployFlow.Infrastructure.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -39,7 +41,8 @@ public static class ServiceCollectionExtensions
             .AddEntityFrameworkStores<ApplicationDbContext>()
             .AddDefaultTokenProviders();
 
-        // Redis cache
+        // Redis cache (with in-memory fallback for when Redis is unavailable)
+        services.AddMemoryCache();
         services.AddStackExchangeRedisCache(options =>
             options.Configuration = configuration.GetConnectionString("Redis"));
 
@@ -48,6 +51,15 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IDeploymentRepository, DeploymentRepository>();
         services.AddScoped<IServerRepository, ServerRepository>();
         services.AddScoped<IDatabaseRepository, Persistence.Repositories.DatabaseRepository>();
+        services.AddScoped<IDatabaseBackupRepository, Persistence.Repositories.DatabaseBackupRepository>();
+        services.AddScoped<ITenantRepository<S3Destination>>(sp =>
+            new TenantRepository<S3Destination>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<BackupPolicy>>(sp =>
+            new TenantRepository<BackupPolicy>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<RestoreJob>>(sp =>
+            new TenantRepository<RestoreJob>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<TeamInvitation>>(sp =>
+            new TenantRepository<TeamInvitation>(sp.GetRequiredService<ApplicationDbContext>()));
         services.AddScoped<IPipelineRepository, Persistence.Repositories.PipelineRepository>();
         services.AddScoped<IAuditLogRepository, AuditLogRepository>();
         services.AddScoped<IAlertRepository, AlertRepository>();
@@ -59,6 +71,27 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IDomainRepository, DomainRepository>();
         services.AddScoped<IEnvVariableRepository, EnvVariableRepository>();
         services.AddScoped<INotificationConfigRepository, NotificationConfigRepository>();
+        services.AddScoped<IAlertRuleRepository, AlertRuleRepository>();
+        services.AddScoped<ITenantRepository<ProjectEnvironment>>(sp =>
+            new TenantRepository<ProjectEnvironment>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<ComposeStack>>(sp =>
+            new TenantRepository<ComposeStack>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<TraefikRouter>>(sp =>
+            new TenantRepository<TraefikRouter>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<ProvisioningJob>>(sp =>
+            new TenantRepository<ProvisioningJob>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<RecoveryRule>>(sp =>
+            new TenantRepository<RecoveryRule>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<PreviewEnvironment>>(sp =>
+            new TenantRepository<PreviewEnvironment>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<ProjectDeploymentEnvironment>>(sp =>
+            new TenantRepository<ProjectDeploymentEnvironment>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<OutboundWebhookConfig>>(sp =>
+            new TenantRepository<OutboundWebhookConfig>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<PolicyTemplate>>(sp =>
+            new TenantRepository<PolicyTemplate>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<ProjectSlo>>(sp =>
+            new TenantRepository<ProjectSlo>(sp.GetRequiredService<ApplicationDbContext>()));
 
         // Unit of work
         services.AddScoped<IUnitOfWork, UnitOfWork>();
@@ -76,13 +109,43 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IAuditService, AuditService>();
+        services.AddScoped<IPermissionService, PermissionService>();
+        services.AddScoped<BlueGreenDeploymentService>();
+        services.AddScoped<ClusterService>();
+        services.AddScoped<DeployFlow.Application.Features.Deployments.Commands.IPreflightCheckService, PreflightCheckService>();
+        services.AddSingleton<IDatabaseRestoreJobService, DatabaseRestoreJobService>();
+        services.AddScoped<IS3DestinationValidationService, S3DestinationValidationService>();
         services.AddHttpClient("notifications");
 
+        // Sprint 12 — DAG execution, Rollback, Deployment Providers
+        services.AddScoped<IPipelineSnapshotRepository, PipelineSnapshotRepository>();
+        services.AddScoped<RollbackManager>();
+        services.AddSingleton<DeploymentProviderRegistry>();
+        services.AddSingleton<IDeploymentProvider, VercelDeploymentProvider>();
+        services.AddSingleton<IDeploymentProvider, NetlifyDeploymentProvider>();
+        services.AddSingleton<IDeploymentProvider, AwsS3DeploymentProvider>();
+        services.AddHttpClient("vercel");
+        services.AddHttpClient("netlify");
+        services.AddHttpClient("rollback");
+
+        // ── New SOLID services ────────────────────────────────────────────────
+        services.AddSingleton<IDockerfileGeneratorService, DockerfileGeneratorService>();
+        services.AddSingleton<ISmartFixEngine, SmartFixEngine>();
+        services.AddScoped<IBuildService, BuildService>();
+
         // Background services
-        services.AddHostedService<DeploymentRunnerService>();
-        services.AddHostedService<ServerHealthCheckService>();
-        services.AddHostedService<AlertEvaluatorService>();
-        services.AddHostedService<ContainerMetricsCollectorService>();
+        var enableBackgroundServices = configuration.GetValue("EnableBackgroundServices", true);
+        if (enableBackgroundServices)
+        {
+            services.AddHostedService<DeploymentRunnerService>();
+            services.AddHostedService<ServerHealthCheckService>();
+            services.AddHostedService<AlertEvaluatorService>();
+            services.AddHostedService<ContainerMetricsCollectorService>();
+            services.AddHostedService<CostCalculationService>();
+            services.AddHostedService<ServerAutoRecoveryService>();
+            services.AddHostedService<PipelineRunnerService>();
+            services.AddHostedService<ScheduledTaskRunnerService>();
+        }
 
         return services;
     }
@@ -135,6 +198,26 @@ public static class ServiceCollectionExtensions
             };
             await userManager.CreateAsync(admin, "Admin123!");
             await userManager.AddToRoleAsync(admin, "Admin");
+        }
+
+        // ── Dev / demo user ───────────────────────────────────────────────
+        // Pre-seeded so local development works without a separate registration step.
+        const string devEmail = "sudhakar046@gmail.com";
+        if (await userManager.FindByEmailAsync(devEmail) is null)
+        {
+            var devUser = new ApplicationUser
+            {
+                Id = Guid.Parse("20000000-0000-0000-0000-000000000002"),
+                UserName = devEmail,
+                Email = devEmail,
+                EmailConfirmed = true,
+                FullName = "Sudhakar",
+                Role = "Admin",
+                TenantId = tenantId,
+                IsActive = true,
+            };
+            await userManager.CreateAsync(devUser, "Pits@2020");
+            await userManager.AddToRoleAsync(devUser, "Admin");
         }
 
         // ── Servers ───────────────────────────────────────────────────────

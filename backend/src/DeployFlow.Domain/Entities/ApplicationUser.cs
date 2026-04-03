@@ -142,6 +142,20 @@ public class NotificationConfig : TenantEntity
     public string EventsJson { get; set; } = "[]";
 }
 
+public class AlertRule : TenantEntity
+{
+    public string Name { get; set; } = default!;
+    public string Metric { get; set; } = default!;
+    public string Operator { get; set; } = ">";
+    public decimal Threshold { get; set; }
+    public int WindowMinutes { get; set; } = 5;
+    public AlertSeverity Severity { get; set; } = AlertSeverity.Warning;
+    public bool IsEnabled { get; set; } = true;
+    public int CooldownMinutes { get; set; } = 10;
+    public DateTime? LastTriggeredAt { get; set; }
+    public string? Description { get; set; }
+}
+
 public class Alert : TenantEntity
 {
     public string Name { get; set; } = default!;
@@ -228,6 +242,10 @@ public class PipelineStage : BaseEntity
     public int Order { get; set; }
     public PipelineStageStatus Status { get; set; } = PipelineStageStatus.Pending;
     public bool RunParallel { get; set; }
+    /// <summary>Comma-separated stage names this stage depends on (DAG edges).</summary>
+    public string? DependsOn { get; set; }
+    /// <summary>When true, stage execution continues even if a step fails.</summary>
+    public bool ContinueOnFailure { get; set; }
     public ICollection<PipelineStep> Steps { get; set; } = new List<PipelineStep>();
 }
 
@@ -242,6 +260,33 @@ public class PipelineStep : BaseEntity
     public string ConfigJson { get; set; } = "{}";
     public TimeSpan? Duration { get; set; }
     public int? Timeout { get; set; }
+    /// <summary>Number of times to retry a failed step (0 = no retry).</summary>
+    public int? RetryCount { get; set; }
 }
 
 public enum PipelineStatus { Idle, Running, Success, Failed, Cancelled }
+
+public enum PipelineRunStatus { Queued, Running, Success, Failed, Cancelled }
+
+public class PipelineRun : TenantEntity
+{
+    public Guid PipelineId { get; set; }
+    public PipelineRunStatus Status { get; set; } = PipelineRunStatus.Queued;
+    public DateTime StartedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? CompletedAt { get; set; }
+    public int StageCount { get; set; }
+    public int StepCount { get; set; }
+    public string? TriggeredBy { get; set; }
+    public string? ErrorMessage { get; set; }
+}
+
+public class PipelineRunLog : BaseEntity
+{
+    public Guid PipelineRunId { get; set; }
+    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+    public string Level { get; set; } = "info";
+    public string StageName { get; set; } = "pipeline";
+    public string? StepName { get; set; }
+    public string Message { get; set; } = default!;
+    public int Sequence { get; set; }
+}

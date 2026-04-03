@@ -28,13 +28,15 @@ builder.Host.UseSerilog();
 // ─── Application & Infrastructure Layers ──────────────────────────────────────
 builder.Services.AddApplicationLayer();
 builder.Services.AddInfrastructureLayer(builder.Configuration);
-builder.Services
-    .AddIdentityCore<ApplicationUser>(opts =>
-    {
-        opts.Password.RequireDigit = true;
-        opts.Password.RequiredLength = 8;
-    })
-    .AddEntityFrameworkStores<ApplicationDbContext>(); // replace with your actual DbContext type
+builder.Services.Configure<FeatureFlagsOptions>(builder.Configuration.GetSection("FeatureFlags"));
+builder.Services.Configure<ProxyRoutingOptions>(builder.Configuration.GetSection("Proxy"));
+// NOTE: Identity (UserManager, RoleManager, stores, password options) is fully
+// registered inside AddInfrastructureLayer — do NOT call AddIdentityCore again.
+
+// Don't let a crashing background service take down the whole host.
+// Each service already catches OperationCanceledException internally.
+builder.Services.Configure<HostOptions>(opts =>
+    opts.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore);
 
 // ─── HttpContext ──────────────────────────────────────────────────────────────
 builder.Services.AddHttpContextAccessor();
@@ -60,14 +62,15 @@ builder.Services
             ClockSkew = TimeSpan.Zero
         };
 
-        // Support SignalR token via query string
+        // Support token via query string for SignalR hubs and SSE endpoints (EventSource cannot send headers)
         opts.Events = new JwtBearerEvents
         {
             OnMessageReceived = ctx =>
             {
                 var token = ctx.Request.Query["access_token"];
                 var path = ctx.HttpContext.Request.Path;
-                if (!string.IsNullOrEmpty(token) && path.StartsWithSegments("/hubs"))
+                if (!string.IsNullOrEmpty(token) &&
+                    (path.StartsWithSegments("/hubs") || path.StartsWithSegments("/api/logs/stream")))
                     ctx.Token = token;
                 return Task.CompletedTask;
             }
@@ -77,13 +80,34 @@ builder.Services
 builder.Services.AddAuthorization();
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
+// In production, set AllowedOrigins in appsettings / environment variables.
+// In development, the frontend is proxied through Next.js so direct browser→API
+// calls are rare; but we allow all localhost ports so any `next dev --port N`
+// works without CORS failures (which surface as "Network Error" in the browser).
+var configuredOrigins = builder.Configuration["AllowedOrigins"]?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 builder.Services.AddCors(opts =>
     opts.AddPolicy("AllowFrontend", policy =>
-        policy
-            .WithOrigins(builder.Configuration["AllowedOrigins"]?.Split(',') ?? new[] { "http://localhost:3000" })
-            .AllowAnyMethod()
-            .AllowAnyHeader()
-            .AllowCredentials()));
+    {
+        if (configuredOrigins?.Length > 0)
+        {
+            policy.WithOrigins(configuredOrigins);
+        }
+        else if (builder.Environment.IsDevelopment())
+        {
+            // Allow any localhost port during local development.
+            policy.SetIsOriginAllowed(origin =>
+            {
+                if (Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+                    return uri.Host is "localhost" or "127.0.0.1";
+                return false;
+            });
+        }
+        else
+        {
+            policy.WithOrigins("http://localhost:3000");
+        }
+        policy.AllowAnyMethod().AllowAnyHeader().AllowCredentials();
+    }));
 
 // ─── Rate Limiting ────────────────────────────────────────────────────────────
 builder.Services.AddRateLimiter(opts =>
@@ -115,6 +139,8 @@ builder.Services.AddControllers()
 
 // ─── SignalR ──────────────────────────────────────────────────────────────────
 builder.Services.AddSignalR();
+builder.Services.AddSingleton<DeployFlow.Application.Common.IDeploymentLogBroadcaster,
+    DeployFlow.API.Services.SignalRDeploymentLogBroadcaster>();
 
 // ─── Swagger ──────────────────────────────────────────────────────────────────
 builder.Services.AddEndpointsApiExplorer();
@@ -153,7 +179,18 @@ builder.Services.AddHealthChecks();
 var app = builder.Build();
 
 // ─── Migrate DB ───────────────────────────────────────────────────────────────
-await app.Services.MigrateAndSeedAsync();
+var runMigrationsOnStartup = builder.Configuration.GetValue("RunMigrationsOnStartup", true);
+if (runMigrationsOnStartup)
+{
+    try
+    {
+        await app.Services.MigrateAndSeedAsync();
+    }
+    catch (Exception ex) when (app.Environment.IsDevelopment())
+    {
+        app.Logger.LogError(ex, "Database migration on startup failed in Development. Continuing startup with existing schema.");
+    }
+}
 
 // ─── Middleware Pipeline ──────────────────────────────────────────────────────
 if (app.Environment.IsDevelopment())

@@ -78,7 +78,7 @@ namespace DeployFlow.Infrastructure.Migrations
 
                     b.Property<string>("Source")
                         .IsRequired()
-                        .HasColumnType("NVARCHAR2(2000)");
+                        .HasColumnType("NVARCHAR2(450)");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -105,7 +105,181 @@ namespace DeployFlow.Infrastructure.Migrations
 
                     b.HasIndex("TenantId");
 
+                    b.HasIndex("TenantId", "Source", "ResourceId", "Status");
+
                     b.ToTable("alerts", (string)null);
+                });
+
+            modelBuilder.Entity("DeployFlow.Domain.Entities.AlertRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<int>("CooldownMinutes")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("NVARCHAR2(1000)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<DateTime?>("LastTriggeredAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<string>("Metric")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("NVARCHAR2(100)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("NVARCHAR2(200)");
+
+                    b.Property<string>("Operator")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("NVARCHAR2(8)");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<decimal>("Threshold")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("DECIMAL(18,4)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<int>("WindowMinutes")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "IsEnabled");
+
+                    b.ToTable("alert_rules", (string)null);
+                });
+
+            modelBuilder.Entity("DeployFlow.Domain.Entities.AppTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("NVARCHAR2(100)");
+
+                    b.Property<string>("ComposeYaml")
+                        .HasColumnType("NCLOB");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("DefaultDatabaseType")
+                        .HasMaxLength(100)
+                        .HasColumnType("NVARCHAR2(100)");
+
+                    b.Property<int>("DefaultPort")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<int>("DeployCount")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<string>("DockerImage")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("NVARCHAR2(500)");
+
+                    b.Property<string>("DocumentationUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("NVARCHAR2(500)");
+
+                    b.Property<string>("EnvVariables")
+                        .IsRequired()
+                        .HasColumnType("NCLOB");
+
+                    b.Property<string>("GithubUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("NVARCHAR2(500)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<bool>("IsOfficial")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<string>("LogoUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("NVARCHAR2(500)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("NVARCHAR2(200)");
+
+                    b.Property<bool>("RequiresDatabase")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<string>("ServiceType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("NVARCHAR2(100)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Category");
+
+                    b.HasIndex("Slug")
+                        .IsUnique();
+
+                    b.ToTable("app_templates", (string)null);
                 });
 
             modelBuilder.Entity("DeployFlow.Domain.Entities.ApplicationRole", b =>
@@ -149,8 +323,7 @@ namespace DeployFlow.Infrastructure.Migrations
                         .HasColumnType("NUMBER(10)");
 
                     b.Property<string>("AvatarUrl")
-                        .HasMaxLength(1000)
-                        .HasColumnType("NVARCHAR2(1000)");
+                        .HasColumnType("CLOB");
 
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
@@ -312,6 +485,187 @@ namespace DeployFlow.Infrastructure.Migrations
                     b.ToTable("audit_logs", (string)null);
                 });
 
+            modelBuilder.Entity("DeployFlow.Domain.Entities.BackupPolicy", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("CronExpression")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(100)
+                        .HasColumnType("NVARCHAR2(100)")
+                        .HasDefaultValue("0 2 * * *");
+
+                    b.Property<Guid>("DatabaseInstanceId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(1000)
+                        .HasColumnType("NVARCHAR2(1000)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<DateTime?>("LastRunAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<DateTime?>("NextRunAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<int>("RetentionDays")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<Guid?>("S3DestinationId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("StorageLocation")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)")
+                        .HasDefaultValue("local");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("S3DestinationId");
+
+                    b.HasIndex("TenantId", "DatabaseInstanceId")
+                        .IsUnique();
+
+                    b.ToTable("backup_policies", (string)null);
+                });
+
+            modelBuilder.Entity("DeployFlow.Domain.Entities.Cluster", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<int>("Strategy")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Clusters");
+                });
+
+            modelBuilder.Entity("DeployFlow.Domain.Entities.ComposeStack", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("ComposeYaml")
+                        .IsRequired()
+                        .HasColumnType("NCLOB");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("EnvironmentName")
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<DateTime?>("LastDeployedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("NVARCHAR2(200)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<Guid?>("ServerId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<int>("ServiceCount")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Status");
+
+                    b.ToTable("compose_stacks", (string)null);
+                });
+
             modelBuilder.Entity("DeployFlow.Domain.Entities.CostRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -372,6 +726,8 @@ namespace DeployFlow.Infrastructure.Migrations
 
                     b.HasIndex("TenantId");
 
+                    b.HasIndex("TenantId", "RecordedAt");
+
                     b.ToTable("cost_records", (string)null);
                 });
 
@@ -405,6 +761,9 @@ namespace DeployFlow.Infrastructure.Migrations
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("NUMBER(1)");
+
+                    b.Property<Guid?>("S3DestinationId")
+                        .HasColumnType("RAW(16)");
 
                     b.Property<long>("SizeBytes")
                         .HasColumnType("NUMBER(19)");
@@ -531,15 +890,95 @@ namespace DeployFlow.Infrastructure.Migrations
                     b.ToTable("database_instances", (string)null);
                 });
 
+            modelBuilder.Entity("DeployFlow.Domain.Entities.DeployWebhook", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("BitbucketSecret")
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("GitHubSecret")
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<string>("GitLabSecret")
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<string>("GiteaSecret")
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("DeployWebhooks");
+                });
+
             modelBuilder.Entity("DeployFlow.Domain.Entities.Deployment", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("RAW(16)");
 
+                    b.Property<string>("ApprovalNotes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("NVARCHAR2(1000)");
+
+                    b.Property<string>("ApprovalStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("ApprovedBy")
+                        .HasColumnType("RAW(16)");
+
                     b.Property<string>("Branch")
                         .HasMaxLength(200)
                         .HasColumnType("NVARCHAR2(200)");
+
+                    b.Property<DateTime?>("CanaryStartedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<string>("CanaryStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<int>("CanaryStepDurationMinutes")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<int>("CanaryTrafficPercent")
+                        .HasColumnType("NUMBER(10)");
 
                     b.Property<string>("CommitAuthor")
                         .HasMaxLength(200)
@@ -632,6 +1071,12 @@ namespace DeployFlow.Infrastructure.Migrations
 
                     b.HasIndex("TenantId");
 
+                    b.HasIndex("ProjectId", "CreatedAt");
+
+                    b.HasIndex("TenantId", "CreatedAt");
+
+                    b.HasIndex("TenantId", "Status", "CreatedAt");
+
                     b.ToTable("deployments", (string)null);
                 });
 
@@ -681,6 +1126,8 @@ namespace DeployFlow.Infrastructure.Migrations
                     b.HasIndex("DeploymentId");
 
                     b.HasIndex("Timestamp");
+
+                    b.HasIndex("DeploymentId", "Timestamp");
 
                     b.ToTable("deployment_logs", (string)null);
                 });
@@ -842,6 +1289,76 @@ namespace DeployFlow.Infrastructure.Migrations
                     b.ToTable("NotificationConfigs");
                 });
 
+            modelBuilder.Entity("DeployFlow.Domain.Entities.OutboundWebhookConfig", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<int>("DeliveryCount")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<string>("Events")
+                        .IsRequired()
+                        .HasColumnType("NCLOB");
+
+                    b.Property<int>("FailureCount")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<DateTime?>("LastDeliveredAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<string>("LastResponseStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("NVARCHAR2(200)");
+
+                    b.Property<Guid?>("ProjectId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("Secret")
+                        .HasMaxLength(500)
+                        .HasColumnType("NVARCHAR2(500)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "IsEnabled");
+
+                    b.ToTable("outbound_webhook_configs", (string)null);
+                });
+
             modelBuilder.Entity("DeployFlow.Domain.Entities.Pipeline", b =>
                 {
                     b.Property<Guid>("Id")
@@ -915,7 +1432,126 @@ namespace DeployFlow.Infrastructure.Migrations
 
                     b.HasIndex("TenantId");
 
+                    b.HasIndex("TenantId", "CreatedAt");
+
                     b.ToTable("pipelines", (string)null);
+                });
+
+            modelBuilder.Entity("DeployFlow.Domain.Entities.PipelineRun", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<Guid>("PipelineId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<int>("StageCount")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<int>("StepCount")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("TriggeredBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("NVARCHAR2(200)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("PipelineId", "StartedAt");
+
+                    b.ToTable("pipeline_runs", (string)null);
+                });
+
+            modelBuilder.Entity("DeployFlow.Domain.Entities.PipelineRunLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<string>("Level")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("NVARCHAR2(20)");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("NCLOB");
+
+                    b.Property<Guid>("PipelineRunId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<string>("StageName")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("NVARCHAR2(120)");
+
+                    b.Property<string>("StepName")
+                        .HasMaxLength(120)
+                        .HasColumnType("NVARCHAR2(120)");
+
+                    b.Property<DateTime>("Timestamp")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PipelineRunId", "Sequence");
+
+                    b.ToTable("pipeline_run_logs", (string)null);
                 });
 
             modelBuilder.Entity("DeployFlow.Domain.Entities.PipelineStage", b =>
@@ -1019,14 +1655,85 @@ namespace DeployFlow.Infrastructure.Migrations
                     b.ToTable("PipelineSteps");
                 });
 
+            modelBuilder.Entity("DeployFlow.Domain.Entities.PreviewEnvironment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("Branch")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<DateTime?>("ClosedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<Guid?>("DeploymentId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<DateTime?>("MergedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<string>("PrNumber")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<string>("PrTitle")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("Url")
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("PreviewEnvironments");
+                });
+
             modelBuilder.Entity("DeployFlow.Domain.Entities.Project", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("RAW(16)");
 
+                    b.Property<string>("ActiveSlot")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("NVARCHAR2(10)")
+                        .HasDefaultValue("blue");
+
                     b.Property<bool>("AutoDeployEnabled")
                         .HasColumnType("NUMBER(1)");
+
+                    b.Property<string>("BlueContainerName")
+                        .HasMaxLength(300)
+                        .HasColumnType("NVARCHAR2(300)");
 
                     b.Property<bool>("BranchDeployEnabled")
                         .HasColumnType("NUMBER(1)");
@@ -1062,6 +1769,10 @@ namespace DeployFlow.Infrastructure.Migrations
                     b.Property<string>("Framework")
                         .HasMaxLength(100)
                         .HasColumnType("NVARCHAR2(100)");
+
+                    b.Property<string>("GreenContainerName")
+                        .HasMaxLength(300)
+                        .HasColumnType("NVARCHAR2(300)");
 
                     b.Property<string>("HealthCheckPath")
                         .HasColumnType("NVARCHAR2(2000)");
@@ -1149,7 +1860,55 @@ namespace DeployFlow.Infrastructure.Migrations
                     b.HasIndex("TenantId", "Slug")
                         .IsUnique();
 
+                    b.HasIndex("TenantId", "UpdatedAt");
+
                     b.ToTable("projects", (string)null);
+                });
+
+            modelBuilder.Entity("DeployFlow.Domain.Entities.ProjectEnvironment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<bool>("IsProduction")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ProjectEnvironments");
                 });
 
             modelBuilder.Entity("DeployFlow.Domain.Entities.ProjectTag", b =>
@@ -1184,6 +1943,169 @@ namespace DeployFlow.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("project_tags", (string)null);
+                });
+
+            modelBuilder.Entity("DeployFlow.Domain.Entities.ProvisioningJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("AssignedIpAddress")
+                        .HasMaxLength(100)
+                        .HasColumnType("NVARCHAR2(100)");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<Guid?>("CreatedServerId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("NVARCHAR2(200)");
+
+                    b.Property<string>("Os")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("NVARCHAR2(100)");
+
+                    b.Property<string>("PlanOutput")
+                        .HasColumnType("NCLOB");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<string>("ProviderServerId")
+                        .HasMaxLength(200)
+                        .HasColumnType("NVARCHAR2(200)");
+
+                    b.Property<string>("Region")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("NVARCHAR2(100)");
+
+                    b.Property<string>("Size")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("NVARCHAR2(100)");
+
+                    b.Property<Guid?>("SshKeyId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<int>("SshKeyId_External")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<string>("Tags")
+                        .IsRequired()
+                        .HasColumnType("NCLOB");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Status");
+
+                    b.ToTable("provisioning_jobs", (string)null);
+                });
+
+            modelBuilder.Entity("DeployFlow.Domain.Entities.RecoveryRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<int>("CooldownSeconds")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<DateTime?>("LastTriggeredAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<int>("MaxRetries")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("NVARCHAR2(200)");
+
+                    b.Property<int>("RetryCount")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<Guid?>("TargetProjectId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<Guid?>("TargetServerId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "IsEnabled");
+
+                    b.ToTable("recovery_rules", (string)null);
                 });
 
             modelBuilder.Entity("DeployFlow.Domain.Entities.RefreshTokenRecord", b =>
@@ -1237,6 +2159,250 @@ namespace DeployFlow.Infrastructure.Migrations
                     b.ToTable("RefreshTokens");
                 });
 
+            modelBuilder.Entity("DeployFlow.Domain.Entities.ResourcePermission", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<int>("Actions")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<Guid>("ResourceId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<int>("ResourceType")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("RAW(16)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ResourcePermissions");
+                });
+
+            modelBuilder.Entity("DeployFlow.Domain.Entities.RestoreJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<Guid>("BackupId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<Guid>("DatabaseInstanceId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<float?>("ProgressPercent")
+                        .HasColumnType("BINARY_FLOAT");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<string>("TargetDatabaseName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("NVARCHAR2(200)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BackupId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "DatabaseInstanceId");
+
+                    b.ToTable("restore_jobs", (string)null);
+                });
+
+            modelBuilder.Entity("DeployFlow.Domain.Entities.S3Destination", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("AccessKeyIdEncrypted")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("NVARCHAR2(1000)");
+
+                    b.Property<string>("BucketName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("NVARCHAR2(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("NVARCHAR2(1000)");
+
+                    b.Property<string>("Endpoint")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("NVARCHAR2(500)");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<DateTime?>("LastTestedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("NVARCHAR2(200)");
+
+                    b.Property<string>("Region")
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<string>("SecretAccessKeyEncrypted")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "IsDefault");
+
+                    b.ToTable("s3_destinations", (string)null);
+                });
+
+            modelBuilder.Entity("DeployFlow.Domain.Entities.ScheduledTask", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("Command")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<string>("ContainerName")
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("Frequency")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<DateTime?>("LastRunAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<string>("LastRunOutput")
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<string>("LastRunStatus")
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<int>("TimeoutSeconds")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ScheduledTasks");
+                });
+
             modelBuilder.Entity("DeployFlow.Domain.Entities.Server", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1247,6 +2413,15 @@ namespace DeployFlow.Infrastructure.Migrations
                         .HasColumnType("NUMBER(10)");
 
                     b.Property<string>("Arch")
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<string>("CloudflareSshDomain")
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<bool>("CloudflareTunnelManual")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<string>("CloudflareTunnelToken")
                         .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<int>("CpuCount")
@@ -1261,11 +2436,27 @@ namespace DeployFlow.Infrastructure.Migrations
                     b.Property<Guid?>("CreatedBy")
                         .HasColumnType("RAW(16)");
 
+                    b.Property<bool>("DeleteUnusedNetworks")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<bool>("DeleteUnusedVolumes")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<bool>("DisableAppImageRetention")
+                        .HasColumnType("NUMBER(1)");
+
                     b.Property<int>("DiskGb")
                         .HasColumnType("NUMBER(10)");
 
                     b.Property<double>("DiskUsagePercent")
                         .HasColumnType("BINARY_DOUBLE");
+
+                    b.Property<bool>("DockerCleanupForce")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<string>("DockerCleanupFrequency")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<string>("DockerVersion")
                         .HasColumnType("NVARCHAR2(2000)");
@@ -1279,7 +2470,13 @@ namespace DeployFlow.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("NVARCHAR2(100)");
 
+                    b.Property<bool>("IsCordoned")
+                        .HasColumnType("NUMBER(1)");
+
                     b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<bool>("IsDraining")
                         .HasColumnType("NUMBER(1)");
 
                     b.Property<bool>("IsSwarmManager")
@@ -1352,6 +2549,10 @@ namespace DeployFlow.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("TenantId");
+
+                    b.HasIndex("Id", "IsCordoned");
+
+                    b.HasIndex("TenantId", "Status");
 
                     b.ToTable("servers", (string)null);
                 });
@@ -1432,6 +2633,9 @@ namespace DeployFlow.Infrastructure.Migrations
                     b.Property<string>("CpuRequest")
                         .HasColumnType("NVARCHAR2(2000)");
 
+                    b.Property<int?>("CpuTargetPercentage")
+                        .HasColumnType("NUMBER(10)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TIMESTAMP(7)");
 
@@ -1462,11 +2666,35 @@ namespace DeployFlow.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("NUMBER(1)");
 
+                    b.Property<DateTime?>("LastScaledAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<string>("LastScalingAction")
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<string>("LastScalingReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("NVARCHAR2(1000)");
+
+                    b.Property<int>("MaxReplicas")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("NUMBER(10)")
+                        .HasDefaultValue(1);
+
                     b.Property<string>("MemoryLimit")
                         .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<string>("MemoryRequest")
                         .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<int?>("MemoryTargetPercentage")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<int>("MinReplicas")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("NUMBER(10)")
+                        .HasDefaultValue(1);
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -1500,7 +2728,7 @@ namespace DeployFlow.Infrastructure.Migrations
 
                     b.HasIndex("ProjectId");
 
-                    b.ToTable("Services");
+                    b.ToTable("Services", (string)null);
                 });
 
             modelBuilder.Entity("DeployFlow.Domain.Entities.SshKey", b =>
@@ -1553,6 +2781,79 @@ namespace DeployFlow.Infrastructure.Migrations
                     b.HasIndex("TenantId");
 
                     b.ToTable("ssh_keys", (string)null);
+                });
+
+            modelBuilder.Entity("DeployFlow.Domain.Entities.TeamInvitation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("NVARCHAR2(320)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<string>("InvitedByName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("NVARCHAR2(200)");
+
+                    b.Property<Guid>("InvitedByUserId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<DateTime>("LastSentAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("NVARCHAR2(200)");
+
+                    b.Property<int>("ResendCount")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("NVARCHAR2(100)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("Token")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "Email");
+
+                    b.ToTable("team_invitations", (string)null);
                 });
 
             modelBuilder.Entity("DeployFlow.Domain.Entities.Tenant", b =>
@@ -1627,6 +2928,146 @@ namespace DeployFlow.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("tenants", (string)null);
+                });
+
+            modelBuilder.Entity("DeployFlow.Domain.Entities.TraefikRouter", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("CertResolver")
+                        .HasMaxLength(100)
+                        .HasColumnType("NVARCHAR2(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<Guid?>("DomainId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("Entrypoints")
+                        .HasMaxLength(100)
+                        .HasColumnType("NVARCHAR2(100)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("NVARCHAR2(200)");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<string>("Rule")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("NVARCHAR2(500)");
+
+                    b.Property<Guid?>("ServerId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("ServiceName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("NVARCHAR2(200)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<bool>("TlsEnabled")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "IsEnabled");
+
+                    b.ToTable("traefik_routers", (string)null);
+                });
+
+            modelBuilder.Entity("DeployFlow.Domain.Entities.Volume", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<string>("DockerName")
+                        .HasMaxLength(300)
+                        .HasColumnType("NVARCHAR2(300)");
+
+                    b.Property<string>("Driver")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(100)
+                        .HasColumnType("NVARCHAR2(100)")
+                        .HasDefaultValue("local");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("NUMBER(1)");
+
+                    b.Property<DateTime?>("LastUsedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<string>("MountPath")
+                        .HasMaxLength(500)
+                        .HasColumnType("NVARCHAR2(500)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("NVARCHAR2(200)");
+
+                    b.Property<Guid?>("ServerId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("NUMBER(19)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("NVARCHAR2(50)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("RAW(16)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("RAW(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ServerId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Name");
+
+                    b.ToTable("volumes", (string)null);
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>

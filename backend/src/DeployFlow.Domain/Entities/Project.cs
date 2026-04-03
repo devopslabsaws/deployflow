@@ -59,6 +59,7 @@ public class Project : AggregateRoot
         string? dockerfilePath = null,
         string? framework = null,
         string? customDomain = null,
+        int? port = null,
         bool autoDeployEnabled = true,
         string[]? tags = null,
         Guid? createdBy = null)
@@ -79,6 +80,7 @@ public class Project : AggregateRoot
             DockerfilePath = dockerfilePath,
             Framework = framework,
             CustomDomain = customDomain,
+            Port = port,
             AutoDeployEnabled = autoDeployEnabled,
             Tags = tags?.ToList() ?? new List<string>(),
             CreatedBy = createdBy
@@ -149,6 +151,29 @@ public class Project : AggregateRoot
     {
         foreach (var tag in tags.Where(t => !Tags.Contains(t)))
             Tags.Add(tag);
+        Touch();
+    }
+
+    // ── Blue/Green deployment support ────────────────────────────────────────
+
+    /// <summary>
+    /// "blue" or "green" — the slot currently serving live traffic.
+    /// The other slot holds the previous stable release for instant rollback.
+    /// </summary>
+    public string ActiveSlot { get; private set; } = "blue";
+
+    /// <summary>Container name / image tag for the blue slot (e.g. myapp-blue).</summary>
+    public string? BlueContainerName { get; private set; }
+
+    /// <summary>Container name / image tag for the green slot (e.g. myapp-green).</summary>
+    public string? GreenContainerName { get; private set; }
+
+    /// <summary>Switches active slot and records which container names are live.</summary>
+    public void SwitchSlot(string newActiveSlot, string? blueContainer, string? greenContainer)
+    {
+        ActiveSlot = newActiveSlot == "blue" ? "blue" : "green";
+        BlueContainerName = blueContainer;
+        GreenContainerName = greenContainer;
         Touch();
     }
 }

@@ -1,3 +1,4 @@
+using DeployFlow.Domain.Entities;
 using DeployFlow.Domain.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -15,6 +16,11 @@ public class UnitOfWork : IUnitOfWork
     public IServerRepository Servers { get; }
     public IServiceRepository Services { get; }
     public IDatabaseRepository Databases { get; }
+    public IDatabaseBackupRepository DatabaseBackups { get; }
+    public ITenantRepository<S3Destination> S3Destinations { get; }
+    public ITenantRepository<BackupPolicy> BackupPolicies { get; }
+    public ITenantRepository<RestoreJob> RestoreJobs { get; }
+    public ITenantRepository<TeamInvitation> TeamInvitations { get; }
     public IPipelineRepository Pipelines { get; }
     public IAuditLogRepository AuditLogs { get; }
     public IAlertRepository Alerts { get; }
@@ -25,6 +31,17 @@ public class UnitOfWork : IUnitOfWork
     public IDomainRepository Domains { get; }
     public IEnvVariableRepository EnvVariables { get; }
     public INotificationConfigRepository NotificationConfigs { get; }
+    public IAlertRuleRepository AlertRules { get; }
+    public ITenantRepository<ProjectEnvironment> Environments { get; }
+    public ITenantRepository<ComposeStack> ComposeStacks { get; }
+    public ITenantRepository<TraefikRouter> TraefikRouters { get; }
+    public ITenantRepository<ProvisioningJob> ProvisioningJobs { get; }
+    public ITenantRepository<RecoveryRule> RecoveryRules { get; }
+    public ITenantRepository<PreviewEnvironment> PreviewEnvironments { get; }
+    public ITenantRepository<ProjectDeploymentEnvironment> ProjectDeploymentEnvironments { get; }
+    public ITenantRepository<OutboundWebhookConfig> OutboundWebhooks { get; }
+    public ITenantRepository<PolicyTemplate> PolicyTemplates { get; }
+    public ITenantRepository<ProjectSlo> ProjectSlos { get; }
 
     public UnitOfWork(
         ApplicationDbContext db,
@@ -33,6 +50,11 @@ public class UnitOfWork : IUnitOfWork
         IServerRepository servers,
         IServiceRepository services,
         IDatabaseRepository databases,
+        IDatabaseBackupRepository databaseBackups,
+        ITenantRepository<S3Destination> s3Destinations,
+        ITenantRepository<BackupPolicy> backupPolicies,
+        ITenantRepository<RestoreJob> restoreJobs,
+        ITenantRepository<TeamInvitation> teamInvitations,
         IPipelineRepository pipelines,
         IAuditLogRepository auditLogs,
         IAlertRepository alerts,
@@ -42,7 +64,18 @@ public class UnitOfWork : IUnitOfWork
         ICostRecordRepository costRecords,
         IDomainRepository domains,
         IEnvVariableRepository envVariables,
-        INotificationConfigRepository notificationConfigs)
+        INotificationConfigRepository notificationConfigs,
+        IAlertRuleRepository alertRules,
+        ITenantRepository<ProjectEnvironment> environments,
+        ITenantRepository<ComposeStack> composeStacks,
+        ITenantRepository<TraefikRouter> traefikRouters,
+        ITenantRepository<ProvisioningJob> provisioningJobs,
+        ITenantRepository<RecoveryRule> recoveryRules,
+        ITenantRepository<PreviewEnvironment> previewEnvironments,
+        ITenantRepository<ProjectDeploymentEnvironment> projectDeploymentEnvironments,
+        ITenantRepository<OutboundWebhookConfig> outboundWebhooks,
+        ITenantRepository<PolicyTemplate> policyTemplates,
+        ITenantRepository<ProjectSlo> projectSlos)
     {
         _db = db;
         Projects = projects;
@@ -50,6 +83,11 @@ public class UnitOfWork : IUnitOfWork
         Servers = servers;
         Services = services;
         Databases = databases;
+        DatabaseBackups = databaseBackups;
+        S3Destinations = s3Destinations;
+        BackupPolicies = backupPolicies;
+        RestoreJobs = restoreJobs;
+        TeamInvitations = teamInvitations;
         Pipelines = pipelines;
         AuditLogs = auditLogs;
         Alerts = alerts;
@@ -60,6 +98,17 @@ public class UnitOfWork : IUnitOfWork
         Domains = domains;
         EnvVariables = envVariables;
         NotificationConfigs = notificationConfigs;
+        AlertRules = alertRules;
+        Environments = environments;
+        ComposeStacks = composeStacks;
+        TraefikRouters = traefikRouters;
+        ProvisioningJobs = provisioningJobs;
+        RecoveryRules = recoveryRules;
+        PreviewEnvironments = previewEnvironments;
+        ProjectDeploymentEnvironments = projectDeploymentEnvironments;
+        OutboundWebhooks = outboundWebhooks;
+        PolicyTemplates = policyTemplates;
+        ProjectSlos = projectSlos;
     }
 
     public Task<int> SaveChangesAsync(CancellationToken ct = default)

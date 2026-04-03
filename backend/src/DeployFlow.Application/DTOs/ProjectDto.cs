@@ -14,6 +14,7 @@ public record ProjectDto(
     string? DockerfilePath,
     string Framework,
     string? CustomDomain,
+    int? Port,
     bool AutoDeploy,
     string? LastDeploymentId,
     string? LastDeploymentStatus,
@@ -52,6 +53,7 @@ public record CreateProjectRequest(
     string? DockerfilePath,
     string Framework,
     string? CustomDomain,
+    int? Port,
     bool AutoDeploy,
     string[] Tags,
     Guid? AssignedServerId
@@ -67,6 +69,7 @@ public record UpdateProjectRequest(
     string? InstallCommand,
     string? DockerfilePath,
     string? CustomDomain,
+    int? Port,
     bool? AutoDeploy,
     string[]? Tags,
     Guid? AssignedServerId

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Plus,
@@ -16,6 +16,9 @@ import {
   XCircle,
   Clock,
   HardDrive,
+  RotateCcw,
+  History,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,11 +31,42 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useDatabases, useTriggerBackup } from "@/hooks/use-api";
+import { useDatabases, useDeleteDatabase, useTriggerBackup, useRestoreJobs } from "@/hooks/use-api";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { Database, DatabaseType } from "@/types";
 import { CreateDatabaseDialog } from "@/components/databases/create-database-dialog";
+import { BackupPolicyDialog } from "@/components/databases/backup-policy-dialog";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { apiClient } from "@/lib/api-client";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const typeConfig: Record<DatabaseType, { color: string; bg: string; label: string }> = {
   postgresql: { color: "text-blue-500", bg: "bg-blue-500/10", label: "PostgreSQL" },
@@ -52,10 +86,50 @@ const statusConfig = {
   error: { icon: XCircle, color: "text-destructive", label: "Error" },
 };
 
+interface BackupItem {
+  id: string;
+  fileName: string;
+  status: string;
+  sizeBytes: number;
+  completedAt?: string;
+}
+
+interface RestoreJob {
+  jobId: string;
+  status: string;
+  progressPercent: number;
+  message: string;
+  targetDatabaseName: string;
+}
+
 export default function DatabasesPage() {
   const [createOpen, setCreateOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [forceDeleteOpen, setForceDeleteOpen] = useState(false);
+  const [forceDeleteMessage, setForceDeleteMessage] = useState("");
+  const [backupPolicyOpen, setBackupPolicyOpen] = useState(false);
+  const [backupPolicyDbId, setBackupPolicyDbId] = useState<string | null>(null);
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const [restoreDb, setRestoreDb] = useState<Database | null>(null);
+  const [restoreHistoryDbId, setRestoreHistoryDbId] = useState<string | null>(null);
+  const [backups, setBackups] = useState<BackupItem[]>([]);
+  const [loadingBackups, setLoadingBackups] = useState(false);
+  const [selectedBackupId, setSelectedBackupId] = useState("");
+  const [targetDatabaseName, setTargetDatabaseName] = useState("");
+  const [validationMessage, setValidationMessage] = useState<string | null>(null);
+  const [validationOk, setValidationOk] = useState<boolean | null>(null);
+  const [startingRestore, setStartingRestore] = useState(false);
+  const [restoreJob, setRestoreJob] = useState<RestoreJob | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const { data: databases, isLoading, refetch } = useDatabases();
   const triggerBackup = useTriggerBackup();
+  const deleteDatabase = useDeleteDatabase();
+
+  const handleBackupPolicy = (dbId: string) => {
+    setBackupPolicyDbId(dbId);
+    setBackupPolicyOpen(true);
+  };
 
   const handleBackup = async (id: string, name: string) => {
     try {
@@ -63,6 +137,131 @@ export default function DatabasesPage() {
       toast.success(`Backup started for "${name}"`);
     } catch (e: any) {
       toast.error("Backup failed", { description: e.message });
+    }
+  };
+
+  const handleDelete = async (force = false) => {
+    if (!deleteTarget) return;
+    try {
+      await deleteDatabase.mutateAsync({ id: deleteTarget.id, force });
+      toast.success(`Database "${deleteTarget.name}" deleted.`);
+      setDeleteTarget(null);
+      setForceDeleteOpen(false);
+    } catch (e: any) {
+      if (!force && e.message?.includes("backup")) {
+        // Show a styled force-delete confirmation dialog instead of native confirm()
+        setForceDeleteMessage(e.message);
+        setForceDeleteOpen(true);
+      } else {
+        toast.error("Failed to delete database", { description: e.message });
+      }
+    }
+  };
+
+  const handleForceDelete = () => handleDelete(true);
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, []);
+
+  const openRestore = async (db: Database) => {
+    setRestoreDb(db);
+    setTargetDatabaseName(`${db.databaseName}_restore`);
+    setValidationMessage(null);
+    setValidationOk(null);
+    setRestoreJob(null);
+    setRestoreOpen(true);
+    setLoadingBackups(true);
+
+    try {
+      const response = await apiClient.get<BackupItem[]>(`/databases/${db.id}/backups`);
+      const items = Array.isArray(response) ? response : [];
+      const completed = items.filter((b) => b.status === "completed");
+      setBackups(completed);
+      setSelectedBackupId(completed[0]?.id ?? "");
+    } catch (e: any) {
+      setBackups([]);
+      setSelectedBackupId("");
+      toast.error("Failed to load backups", { description: e.message });
+    } finally {
+      setLoadingBackups(false);
+    }
+  };
+
+  const validateRestoreTarget = async () => {
+    if (!restoreDb) return false;
+    try {
+      const result = await apiClient.post<any>(`/databases/${restoreDb.id}/restore/validate-target`, {
+        targetDatabaseName,
+      });
+
+      const ok = Boolean(result?.isValid);
+      setValidationOk(ok);
+      setValidationMessage(result?.message ?? (ok ? "Target is valid" : "Target is invalid"));
+      return ok;
+    } catch (e: any) {
+      setValidationOk(false);
+      setValidationMessage(e.message);
+      return false;
+    }
+  };
+
+  const startRestore = async () => {
+    if (!restoreDb || !selectedBackupId) return;
+    setStartingRestore(true);
+
+    try {
+      const ok = await validateRestoreTarget();
+      if (!ok) {
+        setStartingRestore(false);
+        return;
+      }
+
+      const job = await apiClient.post<RestoreJob>(`/databases/${restoreDb.id}/restore`, {
+        backupId: selectedBackupId,
+        targetDatabaseName,
+      });
+      setRestoreJob(job);
+      toast.success("Restore job started.");
+
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+      }
+
+      pollRef.current = setInterval(async () => {
+        try {
+          const latest = await apiClient.get<RestoreJob>(`/databases/${restoreDb.id}/restore/jobs/${job.jobId}`);
+          setRestoreJob(latest);
+
+          if (latest.status === "completed" || latest.status === "failed") {
+            if (pollRef.current) {
+              clearInterval(pollRef.current);
+              pollRef.current = null;
+            }
+
+            if (latest.status === "completed") {
+              toast.success("Database restore completed.");
+              refetch();
+            } else {
+              toast.error("Database restore failed", { description: latest.message });
+            }
+          }
+        } catch {
+          if (pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+          }
+        }
+      }, 1200);
+    } catch (e: any) {
+      toast.error("Failed to start restore", { description: e.message });
+    } finally {
+      setStartingRestore(false);
     }
   };
 
@@ -100,17 +299,223 @@ export default function DatabasesPage() {
               key={db.id}
               database={db}
               onBackup={() => handleBackup(db.id, db.name)}
+              onBackupPolicy={() => handleBackupPolicy(db.id)}
+              onRestore={() => openRestore(db)}
+              onRestoreHistory={() => setRestoreHistoryDbId(db.id)}
+              onDelete={() => setDeleteTarget({ id: db.id, name: db.name })}
             />
           ))}
         </div>
       )}
 
       <CreateDatabaseDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <BackupPolicyDialog
+        isOpen={backupPolicyOpen}
+        onOpenChange={setBackupPolicyOpen}
+        databaseId={backupPolicyDbId || ""}
+      />
+      <ConfirmActionDialog
+        open={!!deleteTarget && !forceDeleteOpen}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title="Delete Database"
+        description={deleteTarget
+          ? `This permanently deletes database \"${deleteTarget.name}\" and cannot be undone.`
+          : "This action cannot be undone."}
+        confirmLabel="Delete Database"
+        requireText={deleteTarget?.name}
+        isConfirming={deleteDatabase.isPending}
+        onConfirm={handleDelete}
+      />
+
+      {/* Force-delete confirmation when no backup exists */}
+      <AlertDialog open={forceDeleteOpen} onOpenChange={setForceDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Delete Without Backup?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p className="text-destructive font-medium">{forceDeleteMessage}</p>
+              <p>Are you sure you want to delete <strong>{deleteTarget?.name}</strong> without a backup? This action <strong>cannot be undone</strong> and all data will be permanently lost.</p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setForceDeleteOpen(false); setDeleteTarget(null); }}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleForceDelete}
+              disabled={deleteDatabase.isPending}
+            >
+              {deleteDatabase.isPending ? "Deleting..." : "Yes, Delete Without Backup"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog
+        open={restoreOpen}
+        onOpenChange={(open) => {
+          setRestoreOpen(open);
+          if (!open && pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+          }
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Restore Database</DialogTitle>
+            <DialogDescription>
+              Start a restore job from a completed backup and monitor progress in real time.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Backup</Label>
+              {loadingBackups ? (
+                <Skeleton className="h-10 w-full" />
+              ) : (
+                <Select value={selectedBackupId} onValueChange={setSelectedBackupId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select completed backup" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {backups.map((backup) => (
+                      <SelectItem key={backup.id} value={backup.id}>
+                        {backup.fileName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {!loadingBackups && backups.length === 0 && (
+                <p className="text-xs text-muted-foreground">No completed backups found for this database.</p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="restore-target-name">Restore Target Database Name</Label>
+              <Input
+                id="restore-target-name"
+                value={targetDatabaseName}
+                onChange={(e) => {
+                  setTargetDatabaseName(e.target.value);
+                  setValidationOk(null);
+                  setValidationMessage(null);
+                }}
+                placeholder="my_database_restore"
+              />
+            </div>
+
+            {validationMessage && (
+              <p className={cn("text-xs", validationOk ? "text-success" : "text-destructive")}>
+                {validationMessage}
+              </p>
+            )}
+
+            {restoreJob && (
+              <div className="rounded-md border border-border/70 p-3 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Status</span>
+                  <span className="font-medium">{restoreJob.status}</span>
+                </div>
+                <Progress value={restoreJob.progressPercent} className="h-2" />
+                <p className="text-xs text-muted-foreground">{restoreJob.message}</p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={validateRestoreTarget} disabled={!restoreDb || !targetDatabaseName.trim()}>
+              Validate Target
+            </Button>
+            <Button
+              onClick={startRestore}
+              disabled={startingRestore || !selectedBackupId || !targetDatabaseName.trim() || Boolean(restoreJob && restoreJob.status === "running")}
+            >
+              {startingRestore ? "Starting..." : "Start Restore"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <RestoreHistoryDialog databaseId={restoreHistoryDbId} onClose={() => setRestoreHistoryDbId(null)} />
     </div>
   );
 }
 
-function DatabaseCard({ database: db, onBackup }: { database: Database; onBackup: () => void }) {
+function RestoreHistoryDialog({ databaseId, onClose }: { databaseId: string | null; onClose: () => void }) {
+  const { data: jobs, isLoading } = useRestoreJobs(databaseId ?? "");
+
+  const statusColor = (s: string) => {
+    if (s === "completed") return "text-success";
+    if (s === "failed") return "text-destructive";
+    if (s === "running") return "text-blue-500";
+    return "text-muted-foreground";
+  };
+
+  return (
+    <Dialog open={!!databaseId} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <History className="h-4 w-4" />Restore History
+          </DialogTitle>
+          <DialogDescription>Past and in-progress database restore jobs.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 max-h-80 overflow-y-auto py-1">
+          {isLoading && (
+            <p className="text-sm text-muted-foreground text-center py-4">Loading...</p>
+          )}
+          {!isLoading && (!jobs || jobs.length === 0) && (
+            <p className="text-sm text-muted-foreground text-center py-4">No restore jobs found.</p>
+          )}
+          {jobs?.map((job: any) => (
+            <div key={job.jobId ?? job.id} className="rounded-md border border-border/60 p-3 space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-mono font-medium truncate">{job.targetDatabaseName}</span>
+                <Badge variant="outline" className={`text-[10px] ${statusColor(job.status)}`}>
+                  {job.status}
+                </Badge>
+              </div>
+              {job.progressPercent != null && (
+                <Progress value={job.progressPercent} className="h-1.5" />
+              )}
+              <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                {job.startedAt && <span>Started {new Date(job.startedAt).toLocaleString()}</span>}
+                {job.completedAt && <span>Completed {new Date(job.completedAt).toLocaleString()}</span>}
+              </div>
+              {job.errorMessage && (
+                <p className="text-[10px] text-destructive">{job.errorMessage}</p>
+              )}
+            </div>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DatabaseCard({
+  database: db,
+  onBackup,
+  onBackupPolicy,
+  onRestore,
+  onRestoreHistory,
+  onDelete,
+}: {
+  database: Database;
+  onBackup: () => void;
+  onBackupPolicy: () => void;
+  onRestore: () => void;
+  onRestoreHistory: () => void;
+  onDelete: () => void;
+}) {
   const [showConnectionString, setShowConnectionString] = useState(false);
   const typeCfg = typeConfig[db.type];
   const statusCfg = statusConfig[db.status] ?? statusConfig.error;
@@ -150,11 +555,20 @@ function DatabaseCard({ database: db, onBackup }: { database: Database; onBackup
                 <DropdownMenuItem onClick={onBackup}>
                   <Download className="mr-2 w-4 h-4" />Backup Now
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={onBackupPolicy}>
+                  <Clock className="mr-2 w-4 h-4" />Backup Policy
+                </DropdownMenuItem>
                 <DropdownMenuItem>
                   <DatabaseIcon className="mr-2 w-4 h-4" />Open Console
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={onRestore}>
+                  <RotateCcw className="mr-2 w-4 h-4" />Restore
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onRestoreHistory}>
+                  <History className="mr-2 w-4 h-4" />Restore History
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-destructive">
+                <DropdownMenuItem className="text-destructive" onClick={onDelete}>
                   <Trash2 className="mr-2 w-4 h-4" />Delete
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -163,7 +577,6 @@ function DatabaseCard({ database: db, onBackup }: { database: Database; onBackup
         </CardHeader>
 
         <CardContent className="space-y-4">
-          {/* Status */}
           <div className="flex items-center justify-between">
             <div className={cn("flex items-center gap-1.5 text-xs", statusCfg.color)}>
               <StatusIcon className={cn("w-3.5 h-3.5", db.status === "creating" || db.status === "restoring" ? "animate-spin" : "")} />
@@ -175,7 +588,6 @@ function DatabaseCard({ database: db, onBackup }: { database: Database; onBackup
             </div>
           </div>
 
-          {/* Connection String */}
           {db.connectionString && (
             <div className="rounded-md bg-muted/50 border border-border/50 p-2">
               <div className="flex items-center justify-between mb-1">
@@ -197,7 +609,6 @@ function DatabaseCard({ database: db, onBackup }: { database: Database; onBackup
             </div>
           )}
 
-          {/* Backup Info */}
           <div className="flex items-center justify-between text-xs border-t border-border/50 pt-3">
             <div className="flex items-center gap-1.5 text-muted-foreground">
               <Clock className="w-3 h-3" />

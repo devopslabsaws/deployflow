@@ -76,8 +76,19 @@ public class CreatePipelineCommandValidator : AbstractValidator<CreatePipelineCo
         RuleFor(x => x.Name).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ProjectId).NotEmpty();
         RuleFor(x => x.Trigger)
-            .Must(t => Enum.TryParse<PipelineTriggerType>(t, true, out _))
+            .Must(IsValidTrigger)
             .WithMessage("Invalid trigger type.");
+    }
+
+    private static bool IsValidTrigger(string value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant() switch
+        {
+            "pr" => "pullrequest",
+            _ => value
+        };
+
+        return Enum.TryParse<PipelineTriggerType>(normalized, true, out _);
     }
 }
 
@@ -96,7 +107,12 @@ public class CreatePipelineCommandHandler : IRequestHandler<CreatePipelineComman
         if (project is null || project.TenantId != _currentUser.TenantId)
             return Result<PipelineDto>.Failure("Project not found.", 404);
 
-        Enum.TryParse<PipelineTriggerType>(request.Trigger, true, out var trigger);
+        var triggerValue = request.Trigger.Trim().ToLowerInvariant() switch
+        {
+            "pr" => "pullrequest",
+            _ => request.Trigger
+        };
+        Enum.TryParse<PipelineTriggerType>(triggerValue, true, out var trigger);
 
         var pipeline = new Pipeline
         {
@@ -110,6 +126,76 @@ public class CreatePipelineCommandHandler : IRequestHandler<CreatePipelineComman
         };
 
         await _uow.Pipelines.AddAsync(pipeline, ct);
+        await _uow.SaveChangesAsync(ct);
+        return Result<PipelineDto>.Success(_mapper.Map<PipelineDto>(pipeline));
+    }
+}
+
+public record UpdatePipelineCommand(
+    Guid Id,
+    string Name,
+    string? Description,
+    string Trigger,
+    string? CronExpression,
+    bool IsEnabled
+) : IRequest<Result<PipelineDto>>;
+
+public class UpdatePipelineCommandValidator : AbstractValidator<UpdatePipelineCommand>
+{
+    public UpdatePipelineCommandValidator()
+    {
+        RuleFor(x => x.Id).NotEmpty();
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Trigger)
+            .Must(IsValidTrigger)
+            .WithMessage("Invalid trigger type.");
+    }
+
+    private static bool IsValidTrigger(string value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant() switch
+        {
+            "pr" => "pullrequest",
+            _ => value
+        };
+
+        return Enum.TryParse<PipelineTriggerType>(normalized, true, out _);
+    }
+}
+
+public class UpdatePipelineCommandHandler : IRequestHandler<UpdatePipelineCommand, Result<PipelineDto>>
+{
+    private readonly IUnitOfWork _uow;
+    private readonly ICurrentUser _currentUser;
+    private readonly IMapper _mapper;
+
+    public UpdatePipelineCommandHandler(IUnitOfWork uow, ICurrentUser cu, IMapper mapper)
+    {
+        _uow = uow;
+        _currentUser = cu;
+        _mapper = mapper;
+    }
+
+    public async Task<Result<PipelineDto>> Handle(UpdatePipelineCommand request, CancellationToken ct)
+    {
+        var pipeline = await _uow.Pipelines.GetByIdAsync(request.Id, ct);
+        if (pipeline is null || pipeline.TenantId != _currentUser.TenantId)
+            return Result<PipelineDto>.Failure("Pipeline not found.", 404);
+
+        var triggerValue = request.Trigger.Trim().ToLowerInvariant() switch
+        {
+            "pr" => "pullrequest",
+            _ => request.Trigger
+        };
+        Enum.TryParse<PipelineTriggerType>(triggerValue, true, out var trigger);
+
+        pipeline.Name = request.Name;
+        pipeline.Description = request.Description;
+        pipeline.Trigger = trigger;
+        pipeline.CronExpression = request.CronExpression;
+        pipeline.IsEnabled = request.IsEnabled;
+        pipeline.UpdatedAt = DateTime.UtcNow;
+
         await _uow.SaveChangesAsync(ct);
         return Result<PipelineDto>.Success(_mapper.Map<PipelineDto>(pipeline));
     }

@@ -52,6 +52,10 @@ services:
       Jwt__ExpiryMinutes: "60"
       Encryption__Secret: ${ENCRYPTION_SECRET:?ENCRYPTION_SECRET is required}
       AllowedOrigins: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      GitHub__FrontendUrl: ${GITHUB_FRONTEND_URL:-}
+      GitHub__CallbackUrl: ${GITHUB_CALLBACK_URL:-}
+      GitLab__CallbackUrl: ${GITLAB_CALLBACK_URL:-}
+      Google__CallbackUrl: ${GOOGLE_CALLBACK_URL:-}
     ports:
       - "5000:8080"
     depends_on:
@@ -74,8 +78,9 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000/api}
-        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:5000}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-}
+        API_INTERNAL_URL: http://api:8080
     container_name: deployflow-frontend
     restart: unless-stopped
     environment:

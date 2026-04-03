@@ -5,30 +5,49 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { AppTopbar } from "@/components/layout/app-topbar";
+import { TokenExpiryWatcher } from "@/components/providers/token-expiry-watcher";
 import { useAuthStore } from "@/store/auth-store";
-
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const authPersist = (useAuthStore as any).persist;
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
-  const { isAuthenticated } = useAuthStore();
+  const [authHydrated, setAuthHydrated] = useState(false);
+  const { isAuthenticated, refreshUser } = useAuthStore();
   const router = useRouter();
 
-  // Wait for Zustand persist to rehydrate from localStorage
   useEffect(() => {
-    setHydrated(true);
+    if (!authPersist) {
+      setAuthHydrated(true);
+      return;
+    }
+
+    if (authPersist.hasHydrated()) {
+      setAuthHydrated(true);
+      return;
+    }
+
+    const unsubscribe = authPersist.onFinishHydration(() => {
+      setAuthHydrated(true);
+    });
+
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
-    if (hydrated && !isAuthenticated) {
+    if (!authHydrated) return;
+    if (!isAuthenticated) {
       router.replace("/login");
+      return;
     }
-  }, [hydrated, isAuthenticated, router]);
+    // Refresh user profile in background — failures are now safely handled in the store
+    refreshUser();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authHydrated, isAuthenticated]);
 
-  if (!hydrated || !isAuthenticated) {
+  if (!authHydrated || !isAuthenticated) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -38,6 +57,7 @@ export default function DashboardLayout({
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
+      <TokenExpiryWatcher />
       {/* Desktop sidebar — always a static flex item */}
       <div className="hidden shrink-0 md:flex">
         <AppSidebar />

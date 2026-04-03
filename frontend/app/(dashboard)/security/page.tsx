@@ -19,9 +19,15 @@ import {
 import { useSshKeys, useCreateSshKey, useDeleteSshKey } from "@/hooks/use-api";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TwoFaDialog } from "@/components/settings/two-fa-dialog";
+import { useAuthStore } from "@/store/auth-store";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 
 export default function SecurityPage() {
+  const { user } = useAuthStore();
   const [addKeyOpen, setAddKeyOpen] = useState(false);
+  const [twoFaOpen, setTwoFaOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [keyForm, setKeyForm] = useState({ name: "", privateKey: "", passphrase: "" });
   const [showKey, setShowKey] = useState(false);
   const { data: sshKeys, isLoading } = useSshKeys();
@@ -43,10 +49,10 @@ export default function SecurityPage() {
     }
   };
 
-  const handleDeleteKey = async (id: string, name: string) => {
-    if (!confirm(`Delete SSH key "${name}"?`)) return;
+  const handleDeleteKey = async () => {
+    if (!deleteTarget) return;
     try {
-      await deleteSshKey.mutateAsync(id);
+      await deleteSshKey.mutateAsync(deleteTarget.id);
       toast.success("SSH key deleted.");
     } catch (e: any) {
       toast.error("Failed to delete key", { description: e.message });
@@ -116,7 +122,7 @@ export default function SecurityPage() {
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8 text-destructive hover:text-destructive"
-                          onClick={() => handleDeleteKey(key.id, key.name)}
+                          onClick={() => setDeleteTarget({ id: key.id, name: key.name })}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -146,14 +152,22 @@ export default function SecurityPage() {
                     <p className="font-medium text-sm">Authenticator App</p>
                     <p className="text-xs text-muted-foreground">Use Google Authenticator, Authy, or similar</p>
                   </div>
+                    {user?.twoFactorEnabled && (
+                      <span className="ml-1 text-xs text-emerald-500 font-medium">● Enabled</span>
+                    )}
+                  </div>
+                  <Button
+                    variant={user?.twoFactorEnabled ? "destructive" : "outline"}
+                    size="sm"
+                    onClick={() => setTwoFaOpen(true)}
+                  >
+                    <Shield className="h-4 w-4 mr-2" />
+                    {user?.twoFactorEnabled ? "Disable" : "Enable"}
+                  </Button>
                 </div>
-                <Button variant="outline" size="sm">
-                  <Shield className="h-4 w-4 mr-2" />Enable
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
         {/* Audit Log */}
         <TabsContent value="audit" className="mt-4">
@@ -212,6 +226,24 @@ export default function SecurityPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <TwoFaDialog
+        open={twoFaOpen}
+        onOpenChange={setTwoFaOpen}
+        isEnabled={user?.twoFactorEnabled}
+      />
+
+      <ConfirmActionDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title="Delete SSH Key"
+        description={deleteTarget
+          ? `Delete SSH key \"${deleteTarget.name}\"?`
+          : "Delete this SSH key?"}
+        confirmLabel="Delete Key"
+        isConfirming={deleteSshKey.isPending}
+        onConfirm={handleDeleteKey}
+      />
     </div>
   );
 }

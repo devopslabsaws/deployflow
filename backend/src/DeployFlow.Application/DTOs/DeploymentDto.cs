@@ -9,6 +9,7 @@ public record DeploymentDto(
     string? CommitMessage,
     string? CommitAuthor,
     string Branch,
+    string? Version,
     string? ImageTag,
     string? Url,
     string Trigger,
@@ -17,7 +18,17 @@ public record DeploymentDto(
     TimeSpan? Duration,
     string? ErrorMessage,
     string? RollbackFromId,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    // Approval
+    string ApprovalStatus,
+    Guid? ApprovedBy,
+    DateTime? ApprovedAt,
+    string? ApprovalNotes,
+    // Canary
+    string CanaryStatus,
+    int CanaryTrafficPercent,
+    int CanaryStepDurationMinutes,
+    DateTime? CanaryStartedAt
 );
 
 public record DeploymentSummaryDto(
@@ -28,6 +39,7 @@ public record DeploymentSummaryDto(
     string? CommitSha,
     string? CommitMessage,
     string Branch,
+    string? Version,
     string Trigger,
     DateTime? StartedAt,
     DateTime? FinishedAt,

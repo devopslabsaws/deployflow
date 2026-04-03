@@ -7,9 +7,57 @@ using FluentValidation;
 
 namespace DeployFlow.Application.Features.Services;
 
+internal static class ServiceMappings
+{
+    public static ServiceDto ToDto(this Service service) => new(
+        service.Id,
+        service.ProjectId,
+        service.Name,
+        service.Type.ToString(),
+        service.Status.ToString(),
+        service.Image,
+        service.Tag,
+        service.Replicas,
+        service.ContainerId,
+        service.CpuLimit,
+        service.MemoryLimit,
+        service.CpuRequest,
+        service.MemoryRequest,
+        service.MinReplicas,
+        service.MaxReplicas,
+        service.CpuTargetPercentage,
+        service.MemoryTargetPercentage,
+        service.LastScalingAction,
+        service.LastScalingReason,
+        service.LastScaledAt,
+        service.CreatedAt,
+        service.UpdatedAt);
+
+    public static ServiceScalingPolicyDto ToScalingPolicyDto(this Service service) => new(
+        service.Id,
+        service.Replicas,
+        service.MinReplicas,
+        service.MaxReplicas,
+        service.CpuTargetPercentage,
+        service.MemoryTargetPercentage,
+        service.LastScalingAction,
+        service.LastScalingReason,
+        service.LastScaledAt);
+}
+
 // ─── Get Services ─────────────────────────────────────────────────────────────
 
 public record GetServicesQuery(Guid? ProjectId = null) : IRequest<Result<List<ServiceDto>>>;
+public record GetServiceQuery(Guid Id) : IRequest<Result<ServiceDto>>;
+public record GetServiceScalingPolicyQuery(Guid Id) : IRequest<Result<ServiceScalingPolicyDto>>;
+public record UpdateServiceScalingPolicyCommand(
+    Guid Id,
+    int MinReplicas,
+    int MaxReplicas,
+    int? CpuTargetPercentage,
+    int? MemoryTargetPercentage,
+    string? TriggerReason = null,
+    string? LastScalingAction = null) : IRequest<Result<ServiceScalingPolicyDto>>;
 
 public class GetServicesQueryHandler : IRequestHandler<GetServicesQuery, Result<List<ServiceDto>>>
 {
@@ -25,13 +73,96 @@ public class GetServicesQueryHandler : IRequestHandler<GetServicesQuery, Result<
             ? await _uow.Services.GetByProjectAsync(request.ProjectId.Value, ct)
             : await _uow.Services.GetByTenantAsync(_currentUser.TenantId, ct);
 
-        var dtos = services.Select(s => new ServiceDto(
-            s.Id, s.ProjectId, s.Name, s.Type.ToString(), s.Status.ToString(),
-            s.Image, s.Tag, s.Replicas, s.ContainerId,
-            s.CpuLimit, s.MemoryLimit,
-            s.CreatedAt, s.UpdatedAt)).ToList();
+        var dtos = services.Select(s => s.ToDto()).ToList();
 
         return Result<List<ServiceDto>>.Success(dtos);
+    }
+}
+
+public class GetServiceQueryHandler : IRequestHandler<GetServiceQuery, Result<ServiceDto>>
+{
+    private readonly IUnitOfWork _uow;
+    private readonly ICurrentUser _currentUser;
+
+    public GetServiceQueryHandler(IUnitOfWork uow, ICurrentUser currentUser)
+    {
+        _uow = uow;
+        _currentUser = currentUser;
+    }
+
+    public async Task<Result<ServiceDto>> Handle(GetServiceQuery request, CancellationToken ct)
+    {
+        var service = await _uow.Services.GetByIdAsync(request.Id, ct);
+        if (service is null || service.TenantId != _currentUser.TenantId)
+            return Result<ServiceDto>.Failure("Service not found.", 404);
+
+        return Result<ServiceDto>.Success(service.ToDto());
+    }
+}
+
+public class GetServiceScalingPolicyQueryHandler : IRequestHandler<GetServiceScalingPolicyQuery, Result<ServiceScalingPolicyDto>>
+{
+    private readonly IUnitOfWork _uow;
+    private readonly ICurrentUser _currentUser;
+
+    public GetServiceScalingPolicyQueryHandler(IUnitOfWork uow, ICurrentUser currentUser)
+    {
+        _uow = uow;
+        _currentUser = currentUser;
+    }
+
+    public async Task<Result<ServiceScalingPolicyDto>> Handle(GetServiceScalingPolicyQuery request, CancellationToken ct)
+    {
+        var service = await _uow.Services.GetByIdAsync(request.Id, ct);
+        if (service is null || service.TenantId != _currentUser.TenantId)
+            return Result<ServiceScalingPolicyDto>.Failure("Service not found.", 404);
+
+        return Result<ServiceScalingPolicyDto>.Success(service.ToScalingPolicyDto());
+    }
+}
+
+public class UpdateServiceScalingPolicyCommandValidator : AbstractValidator<UpdateServiceScalingPolicyCommand>
+{
+    public UpdateServiceScalingPolicyCommandValidator()
+    {
+        RuleFor(x => x.Id).NotEmpty();
+        RuleFor(x => x.MinReplicas).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.MaxReplicas).GreaterThanOrEqualTo(x => x.MinReplicas);
+        RuleFor(x => x.CpuTargetPercentage).InclusiveBetween(1, 100).When(x => x.CpuTargetPercentage.HasValue);
+        RuleFor(x => x.MemoryTargetPercentage).InclusiveBetween(1, 100).When(x => x.MemoryTargetPercentage.HasValue);
+    }
+}
+
+public class UpdateServiceScalingPolicyCommandHandler : IRequestHandler<UpdateServiceScalingPolicyCommand, Result<ServiceScalingPolicyDto>>
+{
+    private readonly IUnitOfWork _uow;
+    private readonly ICurrentUser _currentUser;
+
+    public UpdateServiceScalingPolicyCommandHandler(IUnitOfWork uow, ICurrentUser currentUser)
+    {
+        _uow = uow;
+        _currentUser = currentUser;
+    }
+
+    public async Task<Result<ServiceScalingPolicyDto>> Handle(UpdateServiceScalingPolicyCommand request, CancellationToken ct)
+    {
+        var service = await _uow.Services.GetByIdAsync(request.Id, ct);
+        if (service is null || service.TenantId != _currentUser.TenantId)
+            return Result<ServiceScalingPolicyDto>.Failure("Service not found.", 404);
+
+        service.ConfigureScalingPolicy(
+            request.MinReplicas,
+            request.MaxReplicas,
+            request.CpuTargetPercentage,
+            request.MemoryTargetPercentage);
+
+        if (!string.IsNullOrWhiteSpace(request.TriggerReason) || !string.IsNullOrWhiteSpace(request.LastScalingAction))
+        {
+            service.RecordScalingDecision(request.LastScalingAction, request.TriggerReason);
+        }
+
+        await _uow.SaveChangesAsync(ct);
+        return Result<ServiceScalingPolicyDto>.Success(service.ToScalingPolicyDto());
     }
 }
 
@@ -78,12 +209,7 @@ public class CreateServiceCommandHandler : IRequestHandler<CreateServiceCommand,
         await _uow.Services.AddAsync(service, ct);
         await _uow.SaveChangesAsync(ct);
 
-        return Result<ServiceDto>.Success(new ServiceDto(
-            service.Id, service.ProjectId, service.Name,
-            service.Type.ToString(), service.Status.ToString(),
-            service.Image, service.Tag, service.Replicas, service.ContainerId,
-            service.CpuLimit, service.MemoryLimit,
-            service.CreatedAt, service.UpdatedAt));
+        return Result<ServiceDto>.Success(service.ToDto());
     }
 }
 
@@ -108,12 +234,7 @@ public class StartServiceCommandHandler : IRequestHandler<StartServiceCommand, R
         service.SetStatus(ServiceStatus.Running);
         await _uow.SaveChangesAsync(ct);
 
-        return Result<ServiceDto>.Success(new ServiceDto(
-            service.Id, service.ProjectId, service.Name,
-            service.Type.ToString(), service.Status.ToString(),
-            service.Image, service.Tag, service.Replicas, service.ContainerId,
-            service.CpuLimit, service.MemoryLimit,
-            service.CreatedAt, service.UpdatedAt));
+        return Result<ServiceDto>.Success(service.ToDto());
     }
 }
 
@@ -138,12 +259,7 @@ public class StopServiceCommandHandler : IRequestHandler<StopServiceCommand, Res
         service.SetStatus(ServiceStatus.Stopped);
         await _uow.SaveChangesAsync(ct);
 
-        return Result<ServiceDto>.Success(new ServiceDto(
-            service.Id, service.ProjectId, service.Name,
-            service.Type.ToString(), service.Status.ToString(),
-            service.Image, service.Tag, service.Replicas, service.ContainerId,
-            service.CpuLimit, service.MemoryLimit,
-            service.CreatedAt, service.UpdatedAt));
+        return Result<ServiceDto>.Success(service.ToDto());
     }
 }
 
@@ -168,12 +284,7 @@ public class RestartServiceCommandHandler : IRequestHandler<RestartServiceComman
         service.SetStatus(ServiceStatus.Running);
         await _uow.SaveChangesAsync(ct);
 
-        return Result<ServiceDto>.Success(new ServiceDto(
-            service.Id, service.ProjectId, service.Name,
-            service.Type.ToString(), service.Status.ToString(),
-            service.Image, service.Tag, service.Replicas, service.ContainerId,
-            service.CpuLimit, service.MemoryLimit,
-            service.CreatedAt, service.UpdatedAt));
+        return Result<ServiceDto>.Success(service.ToDto());
     }
 }
 

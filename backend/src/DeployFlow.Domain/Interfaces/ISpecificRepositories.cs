@@ -68,6 +68,12 @@ public interface IDatabaseRepository : ITenantRepository<DatabaseInstance>
     Task<IReadOnlyList<DatabaseInstance>> GetByServerAsync(Guid serverId, CancellationToken ct = default);
 }
 
+public interface IDatabaseBackupRepository : IRepository<DatabaseBackup>
+{
+    Task<IReadOnlyList<DatabaseBackup>> GetByDatabaseAsync(Guid databaseId, CancellationToken ct = default);
+    Task<DatabaseBackup?> GetLatestCompletedAsync(Guid databaseId, CancellationToken ct = default);
+}
+
 public interface IPipelineRepository : ITenantRepository<Pipeline>
 {
     Task<IReadOnlyList<Pipeline>> GetByProjectAsync(Guid projectId, CancellationToken ct = default);
@@ -116,6 +122,7 @@ public interface ISshKeyRepository : ITenantRepository<SshKey>
 public interface ICostRecordRepository : IRepository<CostRecord>
 {
     Task<decimal> GetMonthlyCostAsync(Guid tenantId, int year, int month, CancellationToken ct = default);
+    Task<IReadOnlyList<CostRecord>> GetByDateRangeAsync(Guid tenantId, DateTime from, DateTime to, CancellationToken ct = default);
 }
 
 // Value object returned by deployment stats query
@@ -136,4 +143,9 @@ public interface IEnvVariableRepository : ITenantRepository<EnvVariable>
 public interface INotificationConfigRepository : ITenantRepository<NotificationConfig>
 {
     Task<IReadOnlyList<NotificationConfig>> GetEnabledByTenantAsync(Guid tenantId, CancellationToken ct = default);
+}
+
+public interface IAlertRuleRepository : ITenantRepository<AlertRule>
+{
+    Task<IReadOnlyList<AlertRule>> GetEnabledByTenantAsync(Guid tenantId, CancellationToken ct = default);
 }

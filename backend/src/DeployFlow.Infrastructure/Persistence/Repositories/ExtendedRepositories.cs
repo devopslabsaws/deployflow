@@ -20,6 +20,23 @@ public class DatabaseRepository : TenantRepository<DatabaseInstance>, IDatabaseR
         => await _set.Where(d => d.ServerId == serverId).ToListAsync(ct);
 }
 
+public class DatabaseBackupRepository : Repository<DatabaseBackup>, IDatabaseBackupRepository
+{
+    public DatabaseBackupRepository(ApplicationDbContext db) : base(db) { }
+
+    public async Task<IReadOnlyList<DatabaseBackup>> GetByDatabaseAsync(Guid databaseId, CancellationToken ct = default)
+        => await _set
+            .Where(b => b.DatabaseInstanceId == databaseId)
+            .OrderByDescending(b => b.CreatedAt)
+            .ToListAsync(ct);
+
+    public async Task<DatabaseBackup?> GetLatestCompletedAsync(Guid databaseId, CancellationToken ct = default)
+        => await _set
+            .Where(b => b.DatabaseInstanceId == databaseId && b.Status == "completed")
+            .OrderByDescending(b => b.CompletedAt ?? b.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+}
+
 public class PipelineRepository : TenantRepository<Pipeline>, IPipelineRepository
 {
     public PipelineRepository(ApplicationDbContext db) : base(db) { }
@@ -52,5 +69,13 @@ public class NotificationConfigRepository : TenantRepository<NotificationConfig>
 
     public async Task<IReadOnlyList<NotificationConfig>> GetEnabledByTenantAsync(Guid tenantId, CancellationToken ct)
         => await _set.Where(n => n.TenantId == tenantId && n.IsEnabled).ToListAsync(ct);
+}
+
+public class AlertRuleRepository : TenantRepository<AlertRule>, IAlertRuleRepository
+{
+    public AlertRuleRepository(ApplicationDbContext db) : base(db) { }
+
+    public async Task<IReadOnlyList<AlertRule>> GetEnabledByTenantAsync(Guid tenantId, CancellationToken ct)
+        => await _set.Where(r => r.TenantId == tenantId && r.IsEnabled).ToListAsync(ct);
 }
 

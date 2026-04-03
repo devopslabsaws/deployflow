@@ -3,7 +3,7 @@ using DeployFlow.Domain.Common;
 namespace DeployFlow.Domain.Entities;
 
 public enum ServiceStatus { Running, Stopped, Starting, Restarting, Error }
-public enum ServiceType { Web, Api, Worker, Cron, Database, Cache, Queue, Storage }
+public enum ServiceType { Web, Api, Worker, Cron, Database, Cache, Queue, Storage, Microservice, Fullstack, Static }
 
 public class Service : AggregateRoot
 {
@@ -20,6 +20,13 @@ public class Service : AggregateRoot
     public string? MemoryLimit { get; private set; }
     public string? CpuRequest { get; private set; }
     public string? MemoryRequest { get; private set; }
+    public int MinReplicas { get; private set; } = 1;
+    public int MaxReplicas { get; private set; } = 1;
+    public int? CpuTargetPercentage { get; private set; }
+    public int? MemoryTargetPercentage { get; private set; }
+    public string? LastScalingAction { get; private set; }
+    public string? LastScalingReason { get; private set; }
+    public DateTime? LastScaledAt { get; private set; }
     public string? HealthCheckPath { get; private set; }
     public int HealthCheckInterval { get; private set; } = 30;
     public int HealthCheckTimeout { get; private set; } = 10;
@@ -46,7 +53,19 @@ public class Service : AggregateRoot
 
     public void SetStatus(ServiceStatus status) { Status = status; Touch(); }
     public void SetContainerId(string id) { ContainerId = id; Touch(); }
-    public void SetReplicas(int count) { Replicas = Math.Max(0, count); Touch(); }
+    public void SetReplicas(int count)
+    {
+        Replicas = Math.Max(0, count);
+        if (Replicas < MinReplicas)
+        {
+            MinReplicas = Replicas;
+        }
+        if (Replicas > MaxReplicas)
+        {
+            MaxReplicas = Replicas;
+        }
+        Touch();
+    }
 
     public void ConfigureResources(
         string? cpuLimit = null,
@@ -58,6 +77,33 @@ public class Service : AggregateRoot
         MemoryLimit = memoryLimit;
         CpuRequest = cpuRequest;
         MemoryRequest = memoryRequest;
+        Touch();
+    }
+
+    public void ConfigureScalingPolicy(int minReplicas, int maxReplicas, int? cpuTargetPercentage, int? memoryTargetPercentage)
+    {
+        MinReplicas = Math.Max(0, minReplicas);
+        MaxReplicas = Math.Max(MinReplicas, maxReplicas);
+        CpuTargetPercentage = cpuTargetPercentage;
+        MemoryTargetPercentage = memoryTargetPercentage;
+
+        if (Replicas < MinReplicas)
+        {
+            Replicas = MinReplicas;
+        }
+        else if (Replicas > MaxReplicas)
+        {
+            Replicas = MaxReplicas;
+        }
+
+        Touch();
+    }
+
+    public void RecordScalingDecision(string? action, string? reason, DateTime? scaledAt = null)
+    {
+        LastScalingAction = string.IsNullOrWhiteSpace(action) ? null : action;
+        LastScalingReason = string.IsNullOrWhiteSpace(reason) ? null : reason;
+        LastScaledAt = scaledAt ?? DateTime.UtcNow;
         Touch();
     }
 }

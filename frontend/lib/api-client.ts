@@ -1,7 +1,25 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosError } from "axios";
 import { getMockResponse } from "./mock-data";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+// Prefer explicit API URL. Supports absolute URLs (http://host:port[/api]) and
+// relative proxy paths (e.g. /proxy). This keeps branch-based deployments portable.
+const _rawApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+const _normalizedApiUrl = (_rawApiUrl && _rawApiUrl.length > 0 ? _rawApiUrl : "/proxy").replace(/\/+$/, "");
+const _isAbsoluteApiUrl = /^https?:\/\//i.test(_normalizedApiUrl);
+
+// BACKEND_BASE_URL: host only (no /api), used by hubs and auth redirects.
+// For relative API paths, fall back to current origin in browser environments.
+export const BACKEND_BASE_URL = _isAbsoluteApiUrl
+  ? _normalizedApiUrl.replace(/\/api$/i, "")
+  : (typeof window !== "undefined" ? window.location.origin : "");
+
+// BASE_URL: API root consumed by axios.
+// - Absolute input without /api gets /api appended.
+// - Absolute input with /api is used as-is.
+// - Relative input is used as-is (e.g. /proxy) so Next rewrites can forward to /api.
+export const BASE_URL = _isAbsoluteApiUrl
+  ? (_normalizedApiUrl.endsWith("/api") ? _normalizedApiUrl : `${_normalizedApiUrl}/api`)
+  : _normalizedApiUrl;
 
 // Module-level token cache — avoids repeated JSON.parse on every HTTP request
 let _cachedAccessToken: string | null = null;
@@ -97,14 +115,31 @@ class ApiClient {
               originalRequest.headers.Authorization = `Bearer ${accessToken}`;
               return this.instance(originalRequest);
             }
-          } catch {
-            clearCachedTokens();
-            localStorage.removeItem("deployflow-auth");
-            window.location.href = "/login";
+          } catch (refreshError: any) {
+            // Only clear auth and redirect if the refresh endpoint actually responded
+            // with an error (not a network failure). A network failure during refresh
+            // should not log the user out — the server may just be temporarily down.
+            const isNetworkFailure = !refreshError?.response;
+            if (!isNetworkFailure) {
+              clearCachedTokens();
+              localStorage.removeItem("deployflow-auth");
+              window.location.href = "/login";
+            }
           }
         }
 
         const errorData = error.response?.data as any;
+
+        // Network-level failure (backend unreachable, CORS preflight blocked, etc.)
+        // error.response is undefined — no HTTP response was ever received.
+        if (!error.response) {
+          const isTimeout = error.code === "ECONNABORTED";
+          const message = isTimeout
+            ? "Request timed out. The server is taking too long to respond — check that the backend is running."
+            : "Unable to reach the server. The backend may be starting up or offline. Please wait a moment and try again.";
+          return Promise.reject(new Error(message));
+        }
+
         const message =
           errorData?.error ||
           errorData?.message ||
@@ -130,6 +165,26 @@ class ApiClient {
   // POST/PUT/PATCH/DELETE: always throw on error — caller must handle failures
   async post<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
     if (this.mockEnabled()) {
+      // Return a valid auth response so login/register work without a real backend.
+      if (url.includes("/auth/login") || url.includes("/auth/register")) {
+        return {
+          accessToken: "mock-access-token",
+          refreshToken: "mock-refresh-token",
+          user: {
+            id: "mock-user-1",
+            name: "Demo User",
+            email: (data as any)?.email ?? "demo@deployflow.io",
+            role: "owner",
+            tenantId: "mock-tenant-1",
+            isActive: true,
+            createdAt: "2024-01-01T00:00:00Z",
+            twoFactorEnabled: false,
+          },
+        } as T;
+      }
+      if (url.includes("/auth/refresh")) {
+        return { accessToken: "mock-access-token", refreshToken: "mock-refresh-token" } as T;
+      }
       return { id: `mock-${Date.now()}`, ...data, createdAt: new Date().toISOString() } as T;
     }
     const response = await this.instance.post<T>(url, data, config);

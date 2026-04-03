@@ -14,7 +14,7 @@ public class MappingProfile : Profile
                 s.Id, s.Name, s.Slug, s.Description ?? "",
                 s.Status.ToString(), s.RepositoryUrl, s.RepositoryBranch,
                 s.BuildCommand ?? "", s.StartCommand ?? "", s.InstallCommand,
-                s.DockerfilePath, s.Framework ?? "", s.CustomDomain,
+                s.DockerfilePath, s.Framework ?? "", s.CustomDomain, s.Port,
                 s.AutoDeployEnabled,
                 s.LastDeploymentId.HasValue ? s.LastDeploymentId.ToString() : null,
                 s.LastDeploymentStatus != null ? s.LastDeploymentStatus.ToString() : null,
@@ -41,6 +41,7 @@ public class MappingProfile : Profile
                 s.CommitMessage,
                 s.CommitAuthor,
                 s.Branch ?? "main",
+                s.Version,
                 s.ImageTag,
                 s.Url,
                 s.Trigger.ToString(),
@@ -50,7 +51,15 @@ public class MappingProfile : Profile
                     ? s.FinishedAt.Value - s.StartedAt.Value : (TimeSpan?)null,
                 s.ErrorMessage,
                 s.PreviousDeploymentId.HasValue ? s.PreviousDeploymentId.ToString() : null,
-                s.CreatedAt))
+                s.CreatedAt,
+                s.ApprovalStatus.ToString(),
+                s.ApprovedBy,
+                s.ApprovedAt,
+                s.ApprovalNotes,
+                s.CanaryStatus.ToString(),
+                s.CanaryTrafficPercent,
+                s.CanaryStepDurationMinutes,
+                s.CanaryStartedAt))
             .ForAllMembers(o => o.Ignore());
 
         CreateMap<Deployment, DeploymentSummaryDto>()
@@ -62,6 +71,7 @@ public class MappingProfile : Profile
                 s.CommitSha,
                 s.CommitMessage,
                 s.Branch ?? "main",
+                s.Version,
                 s.Trigger.ToString(),
                 s.StartedAt,
                 s.FinishedAt,
@@ -126,6 +136,7 @@ public class MappingProfile : Profile
                 s.Name,
                 s.Description ?? "",
                 s.Status.ToString(),
+                s.IsEnabled,
                 s.Trigger.ToString(),
                 s.ProjectId,
                 s.Project != null ? s.Project.Name : null,
@@ -217,6 +228,55 @@ public class MappingProfile : Profile
                 s.BackupSchedule,
                 s.LastBackupAt,
                 null,           // BackupStatus — set by handler
+                s.CreatedAt,
+                s.UpdatedAt))
+            .ForAllMembers(o => o.Ignore());
+
+        // ── S3Destination ────────────────────────────────────────────────────
+        CreateMap<S3Destination, S3DestinationDto>()
+            .ConstructUsing(s => new S3DestinationDto(
+                s.Id,
+                s.Name,
+                s.Description,
+                s.Endpoint,
+                s.BucketName,
+                s.Region,
+                s.IsDefault,
+                s.Status.ToString(),
+                s.LastTestedAt,
+                s.CreatedAt,
+                s.UpdatedAt))
+            .ForAllMembers(o => o.Ignore());
+
+        // ── BackupPolicy ──────────────────────────────────────────────────────
+        CreateMap<BackupPolicy, BackupPolicyDto>()
+            .ConstructUsing(s => new BackupPolicyDto(
+                s.Id,
+                s.DatabaseInstanceId,
+                s.IsEnabled,
+                s.CronExpression,
+                s.RetentionDays,
+                s.S3DestinationId,
+                s.StorageLocation,
+                s.LastRunAt,
+                s.NextRunAt,
+                s.ErrorMessage,
+                s.CreatedAt,
+                s.UpdatedAt))
+            .ForAllMembers(o => o.Ignore());
+
+        // ── RestoreJob ────────────────────────────────────────────────────────
+        CreateMap<RestoreJob, RestoreJobDto>()
+            .ConstructUsing(s => new RestoreJobDto(
+                s.Id,
+                s.DatabaseInstanceId,
+                s.BackupId,
+                s.TargetDatabaseName,
+                s.Status.ToString(),
+                s.StartedAt,
+                s.CompletedAt,
+                s.ErrorMessage,
+                s.ProgressPercent,
                 s.CreatedAt,
                 s.UpdatedAt))
             .ForAllMembers(o => o.Ignore());

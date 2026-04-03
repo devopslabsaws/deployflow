@@ -54,11 +54,26 @@ public record ResetPasswordRequest(
     string NewPassword
 );
 
+public record InvitationPreviewDto(
+    string Email,
+    string Name,
+    string Role,
+    DateTime ExpiresAt
+);
+
+public record AcceptInvitationRequest(
+    string Token,
+    string Name,
+    string Password
+);
+
 public record TwoFactorSetupDto(
     string Secret,
     string QrCodeUri,
     string[] BackupCodes
 );
+
+public record Enable2FaRequest(string Code);
 
 public record TeamMemberDto(
     Guid Id,
@@ -68,6 +83,19 @@ public record TeamMemberDto(
     string AvatarUrl,
     string Status,
     DateTime? JoinedAt,
+    DateTime CreatedAt
+);
+
+public record TeamInvitationDto(
+    Guid Id,
+    string Email,
+    string Name,
+    string Role,
+    string Status,
+    DateTime ExpiresAt,
+    DateTime LastSentAt,
+    int ResendCount,
+    string InvitedByName,
     DateTime CreatedAt
 );
 

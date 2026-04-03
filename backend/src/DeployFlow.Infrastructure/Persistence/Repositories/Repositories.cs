@@ -290,4 +290,14 @@ public class CostRecordRepository : Repository<CostRecord>, ICostRecordRepositor
             .Where(r => r.TenantId == tenantId && r.RecordedAt >= start && r.RecordedAt < end)
             .SumAsync(r => r.Amount, ct);
     }
+
+    public async Task<IReadOnlyList<CostRecord>> GetByDateRangeAsync(
+        Guid tenantId, DateTime from, DateTime to, CancellationToken ct)
+    {
+        return await _db.CostRecords
+            .Where(r => r.TenantId == tenantId && r.RecordedAt >= from && r.RecordedAt <= to)
+            .AsNoTracking()
+            .OrderBy(r => r.RecordedAt)
+            .ToListAsync(ct);
+    }
 }

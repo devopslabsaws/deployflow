@@ -5,14 +5,21 @@ import { useState } from "react";
 import {
   ArrowLeft, Server, Cpu, MemoryStick, HardDrive, Activity,
   Terminal, Settings, Wifi, WifiOff, RefreshCw, Package, Cloud, Loader2,
+  AlertTriangle, ScrollText, Monitor, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useServer, useServerMetrics, queryKeys } from "@/hooks/use-api";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useServer, useServerMetrics, useServerContainers, useServerLogs, useRemoveContainer, queryKeys } from "@/hooks/use-api";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/utils";
 
@@ -31,6 +38,16 @@ export default function ServerDetailPage({ params }: { params: { id: string } })
   const queryClient = useQueryClient();
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<"ok" | "fail" | null>(null);
+  const [activeTab, setActiveTab] = useState("overview");
+  const [removeConfirm, setRemoveConfirm] = useState<{ id: string; name: string } | null>(null);
+  const removeMutation = useRemoveContainer();
+  const { data: containers, isLoading: containersLoading, isError: containersError, refetch: refetchContainers } =
+    useServerContainers(id, activeTab === "containers");
+
+  const isWindowsServer = server?.os?.toLowerCase().includes("windows") ?? false;
+
+  const { data: logLines, isLoading: logsLoading, isFetching: logsFetching, isError: logsError, refetch: refetchLogs, dataUpdatedAt: logsUpdatedAt } =
+    useServerLogs(id, activeTab === "logs");
 
   function getToken() {
     try {
@@ -48,8 +65,16 @@ export default function ServerDetailPage({ params }: { params: { id: string } })
         method: "POST",
         headers: { Authorization: `Bearer ${getToken()}` },
       });
-      setTestResult(res.ok ? "ok" : "fail");
-      // Refresh server status (Provisioning → Online if SSH succeeded)
+      if (!res.ok) {
+        setTestResult("fail");
+      } else {
+        // Backend returns HTTP 200 with { data: true/false } —
+        // true = SSH reachable, false = server offline/unreachable.
+        // Must check the payload, not just the HTTP status code.
+        const json = await res.json().catch(() => ({ data: false }));
+        setTestResult(json?.data === true ? "ok" : "fail");
+      }
+      // Refresh server card so status dot updates immediately
       queryClient.invalidateQueries({ queryKey: queryKeys.servers.detail(id) });
     } catch {
       setTestResult("fail");
@@ -78,7 +103,11 @@ export default function ServerDetailPage({ params }: { params: { id: string } })
     );
   }
 
-  const cfg = statusConfig[server.status] ?? statusConfig.offline;
+  const cfg = statusConfig[
+    testResult === "ok" ? "online" :
+    testResult === "fail" ? "error" :
+    server.status
+  ] ?? statusConfig.offline;
   const liveMetrics = metrics ?? {
     cpuUsagePercent: server.metrics?.cpuUsagePercent ?? 0,
     memoryUsagePercent: server.metrics?.memoryUsagePercent ?? 0,
@@ -136,7 +165,7 @@ export default function ServerDetailPage({ params }: { params: { id: string } })
         </div>
       </div>
 
-      <Tabs defaultValue="overview">
+      <Tabs defaultValue="overview" onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="containers">Containers</TabsTrigger>
@@ -199,11 +228,11 @@ export default function ServerDetailPage({ params }: { params: { id: string } })
             <CardContent>
               <div className="grid grid-cols-2 gap-y-3 text-sm">
                 {[
-                  ["IP Address",       server.ipAddress],
-                  ["SSH Port",         server.port ?? 22],
-                  ["Region",           server.region ?? "—"],
-                  ["OS",               server.os ?? "—"],
-                  ["Docker",           server.dockerVersion ?? "—"],
+                  ["IP Address",        server.ipAddress],
+                  [server.os?.toLowerCase().includes("windows") ? "WinRM Port" : "SSH Port",  server.port ?? 22],
+                  ["Region",            server.region ?? "—"],
+                  ["OS",                server.os ?? "—"],
+                  ["Docker",            server.dockerVersion ?? "—"],
                   ["Last Health Check", server.lastHealthCheckAt ? formatRelativeTime(server.lastHealthCheckAt) : "—"],
                 ].map(([k, v]) => (
                   <div key={k as string}>
@@ -219,10 +248,112 @@ export default function ServerDetailPage({ params }: { params: { id: string } })
         {/* ── Containers ── */}
         <TabsContent value="containers" className="mt-4">
           <Card className="glass-card">
-            <CardContent className="py-12 text-center">
-              <Package className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
-              <p className="font-medium">No containers data</p>
-              <p className="text-sm text-muted-foreground mt-1">Container list will appear when the server is online and metrics are collected.</p>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm">Running Containers</CardTitle>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0"
+                  onClick={() => refetchContainers()}
+                  disabled={containersLoading}
+                >
+                  <RefreshCw className={cn("w-3.5 h-3.5", containersLoading && "animate-spin")} />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {isWindowsServer ? (
+                <div className="py-10 text-center space-y-3">
+                  <Monitor className="w-9 h-9 text-blue-500/50 mx-auto" />
+                  <div className="space-y-1">
+                    <p className="font-medium text-sm">Windows Server — Docker via WSL2</p>
+                    <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                      Container listing via SSH exec is not available for Windows servers.
+                      Use the Terminal tab to run <code className="font-mono bg-muted px-1 rounded">docker ps</code>{" "}
+                      if Docker Desktop / WSL2 is configured on this server.
+                    </p>
+                  </div>
+                </div>
+              ) : containersLoading ? (
+                <div className="space-y-2">
+                  {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+                </div>
+              ) : containersError ? (
+                /* SSH exec failed — server may actually be offline */
+                <div className="py-10 text-center space-y-3">
+                  <AlertTriangle className="w-9 h-9 text-destructive/50 mx-auto" />
+                  <div className="space-y-1">
+                    <p className="font-medium text-sm text-destructive">Could not connect to server</p>
+                    <p className="text-xs text-muted-foreground">
+                      The SSH exec command failed. The server may be stopped or unreachable.
+                      Check the server is running and click <strong>Test Connection</strong> above.
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-xs h-7"
+                    onClick={() => refetchContainers()}
+                  >
+                    <RefreshCw className="h-3 w-3" /> Retry
+                  </Button>
+                </div>
+              ) : !containers?.length ? (
+                <div className="py-10 text-center">
+                  <Package className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+                  <p className="font-medium text-sm">No running containers</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    No Docker containers are currently running on this server.
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-border/50 text-muted-foreground">
+                        <th className="pb-2 text-left font-medium">Name</th>
+                        <th className="pb-2 text-left font-medium">Image</th>
+                        <th className="pb-2 text-left font-medium">Status</th>
+                        <th className="pb-2 text-left font-medium">Ports</th>
+                        <th className="pb-2" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/30">
+                      {containers.map((c) => (
+                        <tr key={c.id} className="hover:bg-muted/30 transition-colors">
+                          <td className="py-2.5 pr-4 font-mono font-medium">{c.name}</td>
+                          <td className="py-2.5 pr-4 text-muted-foreground">{c.image}</td>
+                          <td className="py-2.5 pr-4">
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "text-[10px] h-5",
+                                c.status.toLowerCase().includes("up") ? "border-emerald-500/50 text-emerald-500" : "border-amber-500/50 text-amber-500"
+                              )}
+                            >
+                              {c.status}
+                            </Badge>
+                          </td>
+                          <td className="py-2.5 font-mono text-muted-foreground">
+                            {c.ports || "—"}
+                          </td>
+                          <td className="py-2.5 text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => setRemoveConfirm({ id: c.id, name: c.name })}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -230,14 +361,153 @@ export default function ServerDetailPage({ params }: { params: { id: string } })
         {/* ── Logs ── */}
         <TabsContent value="logs" className="mt-4">
           <Card className="glass-card">
-            <CardContent className="py-12 text-center">
-              <Activity className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
-              <p className="font-medium">Server logs</p>
-              <p className="text-sm text-muted-foreground mt-1">Live log streaming is available when the server is online.</p>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-sm">Server Logs</CardTitle>
+                  {/* Live poll indicator */}
+                  {activeTab === "logs" && !logsError && (
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "gap-1 text-[10px] h-5",
+                        logsFetching
+                          ? "border-blue-500/40 text-blue-400"
+                          : "border-emerald-500/40 text-emerald-500"
+                      )}
+                    >
+                      <div className={cn(
+                        "h-1.5 w-1.5 rounded-full",
+                        logsFetching ? "bg-blue-400 animate-pulse" : "bg-emerald-500 animate-pulse"
+                      )} />
+                      {logsFetching ? "Fetching…" : "Live (10s)"}
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {logsUpdatedAt > 0 && (
+                    <span className="text-[10px] text-muted-foreground">
+                      Updated {formatRelativeTime(new Date(logsUpdatedAt).toISOString())}
+                    </span>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    onClick={() => refetchLogs()}
+                    disabled={logsLoading || logsFetching}
+                  >
+                    <RefreshCw className={cn("w-3.5 h-3.5", (logsLoading || logsFetching) && "animate-spin")} />
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {logsLoading ? (
+                <div className="p-4 space-y-1.5">
+                  {[...Array(8)].map((_, i) => (
+                    <Skeleton key={i} className={cn("h-4", i % 3 === 0 ? "w-full" : i % 2 === 0 ? "w-3/4" : "w-5/6")} />
+                  ))}
+                </div>
+              ) : logsError ? (
+                <div className="py-12 text-center space-y-3 px-4">
+                  <AlertTriangle className="w-9 h-9 text-destructive/50 mx-auto" />
+                  <div className="space-y-1">
+                    <p className="font-medium text-sm text-destructive">Cannot fetch server logs</p>
+                    <p className="text-xs text-muted-foreground">
+                      The SSH connection failed. Ensure the server is running and SSH access is configured.
+                    </p>
+                  </div>
+                  <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7" onClick={() => refetchLogs()}>
+                    <RefreshCw className="h-3 w-3" /> Retry
+                  </Button>
+                </div>
+              ) : !logLines?.length ? (
+                <div className="py-12 text-center">
+                  <ScrollText className="w-9 h-9 text-muted-foreground/30 mx-auto mb-3" />
+                  <p className="text-sm text-muted-foreground">No log output received.</p>
+                </div>
+              ) : (
+                <ScrollArea className="h-[480px] rounded-b-lg bg-[#0d1117] font-mono text-xs">
+                  <div className="p-4 space-y-0.5">
+                    {logLines.map((line, i) => {
+                      const isSectionHeader = line.message.startsWith("---");
+                      const isError = /error|failed|crit/i.test(line.message);
+                      const isWarn  = /warn|notice/i.test(line.message);
+                      return (
+                        <div
+                          key={i}
+                          className={cn(
+                            "flex gap-3 py-0.5 leading-relaxed",
+                            isSectionHeader ? "text-cyan-400 font-semibold mt-3 first:mt-0" :
+                            isError  ? "text-red-400" :
+                            isWarn   ? "text-yellow-400" :
+                            "text-zinc-300"
+                          )}
+                        >
+                          {!isSectionHeader && (
+                            <span className="text-zinc-600 shrink-0 select-none w-5 text-right tabular-nums">
+                              {i + 1}
+                            </span>
+                          )}
+                          {line.timestamp && !isSectionHeader && (
+                            <span className="text-zinc-600 shrink-0 select-none w-[76px] tabular-nums truncate">
+                              {line.timestamp.replace("T", " ").replace(/\+.*$/, "").slice(0, 19)}
+                            </span>
+                          )}
+                          <span className={cn("flex-1 whitespace-pre-wrap break-all", isSectionHeader && "col-span-3")}>
+                            {line.message}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    {/* Live indicator at end */}
+                    <div className="flex items-center gap-1.5 pt-2 mt-1 border-t border-zinc-800">
+                      <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="text-[10px] text-zinc-600">Auto-refreshes every 10s</span>
+                    </div>
+                  </div>
+                </ScrollArea>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* ── Remove Container Confirmation ── */}
+      <AlertDialog open={!!removeConfirm} onOpenChange={(open) => { if (!open) setRemoveConfirm(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove container?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove container{" "}
+              <span className="font-mono font-semibold text-foreground">{removeConfirm?.name}</span>{" "}
+              from the server. The container must be stopped first — if it is currently running, the removal will fail.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => {
+                if (!removeConfirm) return;
+                try {
+                  await removeMutation.mutateAsync({ serverId: id, containerId: removeConfirm.id });
+                  toast.success(`Container "${removeConfirm.name}" removed.`);
+                  refetchContainers();
+                } catch (e: any) {
+                  toast.error("Failed to remove container", { description: e?.message ?? "Unknown error" });
+                } finally {
+                  setRemoveConfirm(null);
+                }
+              }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

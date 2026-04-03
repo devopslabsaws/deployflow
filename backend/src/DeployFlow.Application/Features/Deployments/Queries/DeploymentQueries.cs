@@ -1,5 +1,6 @@
 using DeployFlow.Application.Common;
 using DeployFlow.Application.DTOs;
+using DeployFlow.Domain.Entities;
 using DeployFlow.Domain.Interfaces;
 using MediatR;
 using AutoMapper;
@@ -97,5 +98,90 @@ public class GetDeploymentLogsQueryHandler : IRequestHandler<GetDeploymentLogsQu
         var dtos = _mapper.Map<List<DeploymentLogEntryDto>>(logs);
         return Result<PaginatedResponse<DeploymentLogEntryDto>>.Success(
             PaginatedResponse<DeploymentLogEntryDto>.Create(dtos, total, request.Page, request.PageSize));
+    }
+}
+
+// ── Incident Report Export ────────────────────────────────────────────────────
+
+public record IncidentLogLine(int Index, string Timestamp, string Stream, string Message);
+
+public record IncidentReportDto(
+    Guid DeploymentId,
+    string ProjectName,
+    string Branch,
+    string? CommitSha,
+    string? CommitMessage,
+    string? CommitAuthor,
+    string Status,
+    string? FailureReason,
+    string? StartedAt,
+    string? FinishedAt,
+    int LogLineCount,
+    IReadOnlyList<IncidentLogLine> Logs,
+    string ServerInfo,
+    string GeneratedAt
+);
+
+public record ExportIncidentReportQuery(Guid DeploymentId) : IRequest<Result<IncidentReportDto>>;
+
+public class ExportIncidentReportQueryHandler : IRequestHandler<ExportIncidentReportQuery, Result<IncidentReportDto>>
+{
+    private readonly IUnitOfWork _uow;
+    private readonly ICurrentUser _currentUser;
+
+    public ExportIncidentReportQueryHandler(IUnitOfWork uow, ICurrentUser currentUser)
+    {
+        _uow = uow;
+        _currentUser = currentUser;
+    }
+
+    public async Task<Result<IncidentReportDto>> Handle(ExportIncidentReportQuery request, CancellationToken ct)
+    {
+        var deployment = await _uow.Deployments.GetByIdAsync(request.DeploymentId, ct);
+        if (deployment is null || deployment.TenantId != _currentUser.TenantId)
+            return Result<IncidentReportDto>.Failure("Deployment not found.", 404);
+
+        if (deployment.Status != DeploymentStatus.Failed)
+            return Result<IncidentReportDto>.Failure("Incident reports are only available for failed deployments.");
+
+        var project = await _uow.Projects.GetByIdAsync(deployment.ProjectId, ct);
+        var (logs, _) = await _uow.Deployments.GetLogsPagedAsync(deployment.Id, 1, 2000, ct);
+
+        Server? server = null;
+        if (deployment.ServerId.HasValue)
+            server = await _uow.Servers.GetByIdAsync(deployment.ServerId.Value, ct);
+
+        var incidentLogs = logs
+            .Select((l, i) => new IncidentLogLine(
+                i + 1,
+                l.Timestamp.ToString("o"),
+                l.Stream ?? l.Level.ToString().ToLower(),
+                l.Message))
+            .ToList();
+
+        var failureReason = logs
+            .Where(l => l.Level == LogLevel.Error &&
+                        l.Message.Contains("fail", StringComparison.OrdinalIgnoreCase))
+            .Select(l => l.Message)
+            .FirstOrDefault();
+
+        var dto = new IncidentReportDto(
+            DeploymentId:  deployment.Id,
+            ProjectName:   project?.Name ?? "Unknown",
+            Branch:        deployment.Branch ?? "unknown",
+            CommitSha:     deployment.CommitSha,
+            CommitMessage: deployment.CommitMessage,
+            CommitAuthor:  deployment.CommitAuthor,
+            Status:        deployment.Status.ToString(),
+            FailureReason: failureReason,
+            StartedAt:     deployment.StartedAt?.ToString("o"),
+            FinishedAt:    deployment.FinishedAt?.ToString("o"),
+            LogLineCount:  logs.Count,
+            Logs:          incidentLogs,
+            ServerInfo:    server is null ? "Unknown" : $"{server.Name} ({server.IpAddress})",
+            GeneratedAt:   DateTime.UtcNow.ToString("o")
+        );
+
+        return Result<IncidentReportDto>.Success(dto);
     }
 }

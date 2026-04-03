@@ -94,11 +94,20 @@ public class Server : AggregateRoot
         Touch();
     }
 
-    public void SetOnline(string? dockerVersion = null, string? os = null)
+    public void UpdateSpecs(int cpuCores, int memoryGb, int diskGb)
+    {
+        if (cpuCores > 0) CpuCount = cpuCores;
+        if (memoryGb > 0) MemoryGb = memoryGb;
+        if (diskGb > 0) DiskGb = diskGb;
+        Touch();
+    }
+
+    public void SetOnline(string? dockerVersion = null, string? os = null, string? region = null)
     {
         Status = ServerStatus.Online;
         if (dockerVersion is not null) DockerVersion = dockerVersion;
         if (os is not null) Os = os;
+        if (region is not null && Region is null) Region = region;
         LastHealthCheckAt = DateTime.UtcNow;
         Touch();
     }
@@ -139,6 +148,91 @@ public class Server : AggregateRoot
     public void EnableKubernetes()
     {
         KubernetesEnabled = true;
+        Touch();
+    }
+
+    // ── Docker Cleanup configuration ─────────────────────────────────────────
+
+    /// <summary>Cron expression for automatic Docker cleanup (e.g. "0 0 * * *").</summary>
+    public string DockerCleanupFrequency { get; private set; } = "0 0 * * *";
+
+    /// <summary>docker system prune --force (removes stopped containers, dangling images, unused networks).</summary>
+    public bool DockerCleanupForce { get; private set; } = true;
+
+    /// <summary>Also remove unused volumes (docker volume prune). Use with caution.</summary>
+    public bool DeleteUnusedVolumes { get; private set; } = false;
+
+    /// <summary>Also remove unused networks.</summary>
+    public bool DeleteUnusedNetworks { get; private set; } = false;
+
+    /// <summary>Disable retaining old application images (removes all previous deployments' images).</summary>
+    public bool DisableAppImageRetention { get; private set; } = false;
+
+    public void UpdateDockerCleanup(
+        string? frequency = null,
+        bool? force = null,
+        bool? deleteVolumes = null,
+        bool? deleteNetworks = null,
+        bool? disableRetention = null)
+    {
+        if (frequency is not null) DockerCleanupFrequency = frequency;
+        if (force.HasValue) DockerCleanupForce = force.Value;
+        if (deleteVolumes.HasValue) DeleteUnusedVolumes = deleteVolumes.Value;
+        if (deleteNetworks.HasValue) DeleteUnusedNetworks = deleteNetworks.Value;
+        if (disableRetention.HasValue) DisableAppImageRetention = disableRetention.Value;
+        Touch();
+    }
+
+    // ── Cloudflare Tunnel configuration ──────────────────────────────────────
+
+    /// <summary>Cloudflare Tunnel API token (encrypted at rest).</summary>
+    public string? CloudflareTunnelToken { get; private set; }
+
+    /// <summary>Configured SSH domain exposed through the Cloudflare Tunnel.</summary>
+    public string? CloudflareSshDomain { get; private set; }
+
+    /// <summary>Whether the tunnel was configured manually (vs. automated).</summary>
+    public bool CloudflareTunnelManual { get; private set; } = false;
+
+    public void ConfigureCloudflareTunnel(string? token, string? sshDomain, bool manual = false)
+    {
+        CloudflareTunnelToken = token;
+        CloudflareSshDomain   = sshDomain;
+        CloudflareTunnelManual = manual;
+        Touch();
+    }
+
+    // ── Cluster node cordon/drain ─────────────────────────────────────────────
+
+    /// <summary>
+    /// When true, the node will not receive new deployments (cordoned).
+    /// Existing workloads remain running.
+    /// </summary>
+    public bool IsCordoned { get; private set; } = false;
+
+    /// <summary>
+    /// When true, the node is actively draining — all workloads are being
+    /// migrated and no new deployments are accepted.
+    /// </summary>
+    public bool IsDraining { get; private set; } = false;
+
+    public void Cordon()
+    {
+        IsCordoned = true;
+        Touch();
+    }
+
+    public void Uncordon()
+    {
+        IsCordoned = false;
+        IsDraining = false;
+        Touch();
+    }
+
+    public void Drain()
+    {
+        IsCordoned = true;
+        IsDraining = true;
         Touch();
     }
 }

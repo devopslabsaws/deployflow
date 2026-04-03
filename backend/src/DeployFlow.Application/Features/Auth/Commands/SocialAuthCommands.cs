@@ -252,7 +252,7 @@ public class SsoInitCommandHandler : IRequestHandler<SsoInitCommand, Result<stri
 
         var callbackUrl = _config["GitHub:FrontendUrl"] is { } fe
             ? $"{fe.TrimEnd('/')}"
-            : "http://localhost:3003";
+            : "http://localhost:3001";
 
         // Encode workspace + state into the state param
         var encodedState = Convert.ToBase64String(

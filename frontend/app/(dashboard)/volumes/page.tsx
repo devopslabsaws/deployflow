@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import {
-  HardDrive, Plus, Trash2, MoreVertical, RefreshCw, Activity,
+  HardDrive, Plus, Trash2, MoreVertical, RefreshCw, Activity, Link, Link2Off,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,10 +15,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useVolumes, useCreateVolume, useDeleteVolume } from "@/hooks/use-api";
+import { useVolumes, useCreateVolume, useDeleteVolume, useAttachVolume, useDetachVolume, useProjects, useServices } from "@/hooks/use-api";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 
 const statusColors = {
   active: "text-success",
@@ -36,10 +40,18 @@ function formatBytes(bytes: number) {
 
 export default function VolumesPage() {
   const [addOpen, setAddOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [attachTarget, setAttachTarget] = useState<{ id: string; name: string } | null>(null);
+  const [attachForm, setAttachForm] = useState({ projectId: "", serviceId: "", mountPath: "" });
   const [form, setForm] = useState({ name: "", mountPath: "", driver: "local" });
   const { data: volumes, isLoading } = useVolumes();
+  const { data: projects } = useProjects();
+  const projectList = projects?.data ?? [];
+  const { data: servicesList = [] } = useServices();
   const createVolume = useCreateVolume();
   const deleteVolume = useDeleteVolume();
+  const attachVolume = useAttachVolume();
+  const detachVolume = useDetachVolume();
 
   const handleCreate = async () => {
     if (!form.name) { toast.error("Volume name is required."); return; }
@@ -53,13 +65,43 @@ export default function VolumesPage() {
     }
   };
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Delete volume "${name}"? All data will be lost.`)) return;
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
     try {
-      await deleteVolume.mutateAsync(id);
+      await deleteVolume.mutateAsync(deleteTarget.id);
       toast.success("Volume deleted.");
     } catch (e: any) {
       toast.error("Failed to delete volume", { description: e.message });
+    }
+  };
+
+  const handleAttach = async () => {
+    if (!attachTarget) return;
+    if (!attachForm.projectId && !attachForm.serviceId) {
+      toast.error("Provide a Project ID or Service ID.");
+      return;
+    }
+    try {
+      await attachVolume.mutateAsync({
+        id: attachTarget.id,
+        projectId: attachForm.projectId || undefined,
+        serviceId: attachForm.serviceId || undefined,
+        mountPath: attachForm.mountPath || undefined,
+      });
+      toast.success(`Volume "${attachTarget.name}" attached.`);
+      setAttachTarget(null);
+      setAttachForm({ projectId: "", serviceId: "", mountPath: "" });
+    } catch (e: any) {
+      toast.error("Failed to attach volume", { description: e.message });
+    }
+  };
+
+  const handleDetach = async (id: string, name: string) => {
+    try {
+      await detachVolume.mutateAsync(id);
+      toast.success(`Volume "${name}" detached.`);
+    } catch (e: any) {
+      toast.error("Failed to detach volume", { description: e.message });
     }
   };
 
@@ -117,6 +159,12 @@ export default function VolumesPage() {
                       {volume.sizeBytes > 0 && (
                         <p className="text-xs text-muted-foreground">{formatBytes(volume.sizeBytes)}</p>
                       )}
+                      {volume.dockerName && (
+                        <p className="text-xs text-muted-foreground">
+                          <Link className="inline h-3 w-3 mr-0.5" />
+                          {volume.dockerName}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <DropdownMenu>
@@ -126,9 +174,18 @@ export default function VolumesPage() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => { setAttachTarget({ id: volume.id, name: volume.name }); setAttachForm({ projectId: "", serviceId: "", mountPath: volume.mountPath ?? "" }); }}>
+                        <Link className="h-4 w-4 mr-2" />Attach
+                      </DropdownMenuItem>
+                      {volume.dockerName && (
+                        <DropdownMenuItem onClick={() => handleDetach(volume.id, volume.name)} disabled={detachVolume.isPending}>
+                          <Link2Off className="h-4 w-4 mr-2" />Detach
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem
                         className="text-destructive"
-                        onClick={() => handleDelete(volume.id, volume.name)}
+                        onClick={() => setDeleteTarget({ id: volume.id, name: volume.name })}
                       >
                         <Trash2 className="h-4 w-4 mr-2" />Delete
                       </DropdownMenuItem>
@@ -140,6 +197,7 @@ export default function VolumesPage() {
           ))}
       </div>
 
+      {/* Create Dialog */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Create Volume</DialogTitle></DialogHeader>
@@ -169,6 +227,75 @@ export default function VolumesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Attach Dialog */}
+      <Dialog open={!!attachTarget} onOpenChange={(open) => { if (!open) setAttachTarget(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Attach Volume — {attachTarget?.name}</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">Select a project or service to attach this volume to.</p>
+            <div className="space-y-1.5">
+              <Label>Project</Label>
+              <Select
+                value={attachForm.projectId}
+                onValueChange={(v) => setAttachForm((f) => ({ ...f, projectId: v, serviceId: "" }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a project…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projectList.map((p: { id: string; name: string }) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>— or — Service</Label>
+              <Select
+                value={attachForm.serviceId}
+                onValueChange={(v) => setAttachForm((f) => ({ ...f, serviceId: v, projectId: "" }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a service…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {servicesList.map((s: { id: string; name: string }) => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Mount Path (optional)</Label>
+              <Input
+                placeholder="/var/data"
+                value={attachForm.mountPath}
+                onChange={(e) => setAttachForm((f) => ({ ...f, mountPath: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAttachTarget(null)}>Cancel</Button>
+            <Button onClick={handleAttach} disabled={attachVolume.isPending}>
+              {attachVolume.isPending ? "Attaching..." : "Attach Volume"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmActionDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title="Delete Volume"
+        description={deleteTarget
+          ? `Delete volume \"${deleteTarget.name}\"? All stored data will be lost.`
+          : "Delete this volume?"}
+        confirmLabel="Delete Volume"
+        isConfirming={deleteVolume.isPending}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }
+

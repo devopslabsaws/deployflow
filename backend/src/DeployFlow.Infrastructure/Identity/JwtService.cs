@@ -36,12 +36,12 @@ public class JwtService : IJwtService
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new(JwtRegisteredClaimNames.Email, user.Email!),
+            new(JwtRegisteredClaimNames.Email, user.Email ?? ""),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new("name", user.FullName),
+            new("name", user.FullName ?? ""),
             new("tenant_id", user.TenantId.ToString()),
-            new("tenant_name", tenantName),
-            new(ClaimTypes.Role, user.Role)
+            new("tenant_name", tenantName ?? ""),
+            new(ClaimTypes.Role, user.Role ?? "user")
         };
 
         var token = new JwtSecurityToken(
@@ -64,11 +64,11 @@ public class JwtService : IJwtService
 
     public AuthTokensDto GenerateTokens(ApplicationUser user, Tenant tenant)
     {
-        var (accessToken, expiresAt) = GenerateAccessToken(user, tenant.Name);
+        var (accessToken, expiresAt) = GenerateAccessToken(user, tenant.Name ?? "");
         var refreshToken = GenerateRefreshToken();
         var userDto = new AuthUserDto(
-            user.Id, user.Email!, user.FullName, user.Role,
-            user.AvatarUrl ?? "", user.TenantId, tenant.Name, tenant.PlanName,
+            user.Id, user.Email ?? "", user.FullName ?? "", user.Role ?? "user",
+            user.AvatarUrl ?? "", user.TenantId, tenant.Name ?? "", tenant.PlanName,
             user.TwoFactorEnabled, user.CreatedAt, user.IsActive, user.LastLoginAt);
         return new AuthTokensDto(accessToken, refreshToken, expiresAt, userDto);
     }

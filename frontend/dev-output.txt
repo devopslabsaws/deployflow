@@ -217,3 +217,11 @@ AggregateError [ECONNREFUSED]:
 
  ✓ Starting...
  ✓ Ready in 17.2s
+ ⚠ Found a change in next.config.mjs. Restarting the server to apply the changes...
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3012
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 16.9s
+[?25h

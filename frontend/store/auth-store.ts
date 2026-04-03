@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { User } from "@/types";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, setCachedTokens, clearCachedTokens } from "@/lib/api-client";
 
 interface AuthState {
   user: User | null;
@@ -33,8 +33,8 @@ export const useAuthStore = create<AuthState>()(
             accessToken: string;
             refreshToken: string;
             user: User;
-          }>("/auth/login", { email, password });
-          set({
+          }>("/auth/login", { email, password });          // Warm the in-memory token cache before any post-login requests fire
+          setCachedTokens(response.accessToken, response.refreshToken);          set({
             user: response.user,
             accessToken: response.accessToken,
             refreshToken: response.refreshToken,
@@ -54,8 +54,7 @@ export const useAuthStore = create<AuthState>()(
             accessToken: string;
             refreshToken: string;
             user: User;
-          }>("/auth/register", { name, email, password });
-          set({
+          }>("/auth/register", { name, email, password });          setCachedTokens(response.accessToken, response.refreshToken);          set({
             user: response.user,
             accessToken: response.accessToken,
             refreshToken: response.refreshToken,
@@ -70,6 +69,7 @@ export const useAuthStore = create<AuthState>()(
 
       logout: () => {
         apiClient.post("/auth/logout", {}).catch(() => {});
+        clearCachedTokens();
         set({
           user: null,
           accessToken: null,
@@ -84,8 +84,14 @@ export const useAuthStore = create<AuthState>()(
         try {
           const user = await apiClient.get<User>("/auth/me");
           set({ user });
-        } catch {
-          set({ user: null, accessToken: null, refreshToken: null, isAuthenticated: false });
+        } catch (err: any) {
+          // Only clear auth when the server explicitly says the token is invalid (401).
+          // Network errors (err.response undefined) or server outages must NOT log the user out.
+          const is401 = err?.response?.status === 401 || (typeof err?.message === "string" && err.message.toLowerCase().includes("401"));
+          if (is401) {
+            set({ user: null, accessToken: null, refreshToken: null, isAuthenticated: false });
+          }
+          // Otherwise silently ignore — keep user logged in
         }
       },
 

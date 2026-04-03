@@ -30,6 +30,10 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
     public DbSet<Service> Services => Set<Service>();
     public DbSet<DatabaseInstance> Databases => Set<DatabaseInstance>();
     public DbSet<DatabaseBackup> DatabaseBackups => Set<DatabaseBackup>();
+    public DbSet<S3Destination> S3Destinations => Set<S3Destination>();
+    public DbSet<BackupPolicy> BackupPolicies => Set<BackupPolicy>();
+    public DbSet<RestoreJob> RestoreJobs => Set<RestoreJob>();
+    public DbSet<TeamInvitation> TeamInvitations => Set<TeamInvitation>();
     public DbSet<Pipeline> Pipelines => Set<Pipeline>();
     public DbSet<PipelineStage> PipelineStages => Set<PipelineStage>();
     public DbSet<PipelineStep> PipelineSteps => Set<PipelineStep>();
@@ -40,7 +44,40 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<CostRecord> CostRecords => Set<CostRecord>();
     public DbSet<NotificationConfig> NotificationConfigs => Set<NotificationConfig>();
+    public DbSet<AlertRule> AlertRules => Set<AlertRule>();
     public DbSet<RefreshTokenRecord> RefreshTokens => Set<RefreshTokenRecord>();
+    public DbSet<ResourcePermission> ResourcePermissions => Set<ResourcePermission>();
+    public DbSet<Cluster> Clusters => Set<Cluster>();
+    public DbSet<DeployWebhook> DeployWebhooks => Set<DeployWebhook>();
+    public DbSet<ScheduledTask> ScheduledTasks => Set<ScheduledTask>();
+    public DbSet<Volume> Volumes => Set<Volume>();
+    public DbSet<PipelineRun> PipelineRuns => Set<PipelineRun>();
+    public DbSet<PipelineRunLog> PipelineRunLogs => Set<PipelineRunLog>();
+    public DbSet<ProjectEnvironment> ProjectEnvironments => Set<ProjectEnvironment>();
+    public DbSet<ComposeStack> ComposeStacks => Set<ComposeStack>();
+    public DbSet<TraefikRouter> TraefikRouters => Set<TraefikRouter>();
+    public DbSet<ProvisioningJob> ProvisioningJobs => Set<ProvisioningJob>();
+    public DbSet<RecoveryRule> RecoveryRules => Set<RecoveryRule>();
+    public DbSet<PreviewEnvironment> PreviewEnvironments => Set<PreviewEnvironment>();
+    public DbSet<ProjectDeploymentEnvironment> ProjectDeploymentEnvironments => Set<ProjectDeploymentEnvironment>();
+    public DbSet<OutboundWebhookConfig> OutboundWebhookConfigs => Set<OutboundWebhookConfig>();
+    public DbSet<PolicyTemplate> PolicyTemplates => Set<PolicyTemplate>();
+    public DbSet<ProjectSlo> ProjectSlos => Set<ProjectSlo>();
+    // Sprint 11 — Auto-Scaling, Blue/Green, Secrets, Ephemeral Envs, OTel
+    public DbSet<ScalingPolicy> ScalingPolicies => Set<ScalingPolicy>();
+    public DbSet<ScalingEvent> ScalingEvents => Set<ScalingEvent>();
+    public DbSet<BlueGreenDeployment> BlueGreenDeployments => Set<BlueGreenDeployment>();
+    public DbSet<BlueGreenSwitchLog> BlueGreenSwitchLogs => Set<BlueGreenSwitchLog>();
+    public DbSet<SecretVault> SecretVaults => Set<SecretVault>();
+    public DbSet<VaultSecret> VaultSecrets => Set<VaultSecret>();
+    public DbSet<SecretProjectBinding> SecretProjectBindings => Set<SecretProjectBinding>();
+    public DbSet<SecretAuditEntry> SecretAuditEntries => Set<SecretAuditEntry>();
+    public DbSet<EphemeralEnvironment> EphemeralEnvironments => Set<EphemeralEnvironment>();
+    public DbSet<OtelTrace> OtelTraces => Set<OtelTrace>();
+    public DbSet<LogAggregationRule> LogAggregationRules => Set<LogAggregationRule>();
+    public DbSet<CrashReport> CrashReports => Set<CrashReport>();
+    // Sprint 12 — DAG execution + Rollback
+    public DbSet<PipelineSnapshot> PipelineSnapshots => Set<PipelineSnapshot>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

@@ -37,6 +37,7 @@ import { toast } from "sonner";
 import Link from "next/link";
 import type { Server as ServerType } from "@/types";
 import { AddServerDialog } from "@/components/servers/add-server-dialog";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 
 const providerIcons: Record<string, string> = {
   aws: "AWS",
@@ -58,14 +59,15 @@ const statusConfig = {
 
 export default function ServersPage() {
   const [addOpen, setAddOpen] = useState(false);
-  const { data: servers, isLoading, refetch } = useServers();
+  const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string } | null>(null);
+  const { data: servers, isLoading, isFetching, refetch } = useServers();
   const removeServer = useRemoveServer();
 
-  const handleRemove = async (id: string, name: string) => {
-    if (!confirm(`Remove server "${name}"? Active deployments may be affected.`)) return;
+  const handleRemove = async () => {
+    if (!removeTarget) return;
     try {
-      await removeServer.mutateAsync(id);
-      toast.success(`Server "${name}" removed.`);
+      await removeServer.mutateAsync(removeTarget.id);
+      toast.success(`Server "${removeTarget.name}" removed.`);
     } catch (e: any) {
       toast.error("Failed to remove server", { description: e.message });
     }
@@ -82,9 +84,9 @@ export default function ServersPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5">
-            <RefreshCw className="h-4 w-4" />
-            Refresh
+          <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5" disabled={isFetching}>
+            <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+            {isFetching ? "Refreshing…" : "Refresh"}
           </Button>
           <Button onClick={() => setAddOpen(true)}>
             <Plus className="w-4 h-4 mr-1.5" />
@@ -105,13 +107,25 @@ export default function ServersPage() {
             <ServerCard
               key={server.id}
               server={server}
-              onRemove={() => handleRemove(server.id, server.name)}
+              onRemove={() => setRemoveTarget({ id: server.id, name: server.name })}
             />
           ))}
         </div>
       )}
 
       <AddServerDialog open={addOpen} onOpenChange={setAddOpen} />
+      <ConfirmActionDialog
+        open={!!removeTarget}
+        onOpenChange={(open) => { if (!open) setRemoveTarget(null); }}
+        title="Remove Server"
+        description={removeTarget
+          ? `Remove server \"${removeTarget.name}\"? Active deployments may be affected.`
+          : "Remove this server?"}
+        confirmLabel="Remove Server"
+        requireText={removeTarget?.name}
+        isConfirming={removeServer.isPending}
+        onConfirm={handleRemove}
+      />
     </div>
   );
 }
