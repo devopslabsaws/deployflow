@@ -1,14 +1,25 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosError } from "axios";
 import { getMockResponse } from "./mock-data";
 
-// Prefer explicit API URL, but default to Next.js same-origin proxy to avoid local port drift.
-// Normalize: strip trailing slash + ensure /api suffix when a direct URL is provided.
-const _rawApiUrl = process.env.NEXT_PUBLIC_API_URL;
-// BACKEND_BASE_URL: host only, no /api — used for SignalR hubs, SSO redirects, etc.
-export const BACKEND_BASE_URL = _rawApiUrl
-  ? _rawApiUrl.replace(/\/+$/, "").replace(/\/api\/?$/, "")
-  : "http://localhost:5000";
-export const BASE_URL = BACKEND_BASE_URL + "/api";
+// Prefer explicit API URL. Supports absolute URLs (http://host:port[/api]) and
+// relative proxy paths (e.g. /proxy). This keeps branch-based deployments portable.
+const _rawApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+const _normalizedApiUrl = (_rawApiUrl && _rawApiUrl.length > 0 ? _rawApiUrl : "/proxy").replace(/\/+$/, "");
+const _isAbsoluteApiUrl = /^https?:\/\//i.test(_normalizedApiUrl);
+
+// BACKEND_BASE_URL: host only (no /api), used by hubs and auth redirects.
+// For relative API paths, fall back to current origin in browser environments.
+export const BACKEND_BASE_URL = _isAbsoluteApiUrl
+  ? _normalizedApiUrl.replace(/\/api$/i, "")
+  : (typeof window !== "undefined" ? window.location.origin : "");
+
+// BASE_URL: API root consumed by axios.
+// - Absolute input without /api gets /api appended.
+// - Absolute input with /api is used as-is.
+// - Relative input is used as-is (e.g. /proxy) so Next rewrites can forward to /api.
+export const BASE_URL = _isAbsoluteApiUrl
+  ? (_normalizedApiUrl.endsWith("/api") ? _normalizedApiUrl : `${_normalizedApiUrl}/api`)
+  : _normalizedApiUrl;
 
 // Module-level token cache — avoids repeated JSON.parse on every HTTP request
 let _cachedAccessToken: string | null = null;

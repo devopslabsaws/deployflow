@@ -193,7 +193,16 @@ export default function LogsPage() {
     }
   };
 
-  const services = ["all", ...Array.from(new Set(streamedLogs.map((l) => l.service).filter(Boolean)))];
+  const services = [
+    "all",
+    ...Array.from(
+      new Set(
+        streamedLogs
+          .map((l) => l.service)
+          .filter((s): s is string => Boolean(s) && s !== "all")
+      )
+    ),
+  ];
 
   return (
     <div className="space-y-4 flex flex-col h-[calc(100vh-10rem)]">
@@ -264,8 +273,8 @@ export default function LogsPage() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {(services as string[]).map((s) => (
-              <SelectItem key={s} value={s}>
+            {(services as string[]).map((s, idx) => (
+              <SelectItem key={`service-${s}-${idx}`} value={s}>
                 {s === "all" ? "All Services" : s}
               </SelectItem>
             ))}
@@ -321,11 +330,11 @@ export default function LogsPage() {
             </div>
           )}
 
-          {filteredLogs.map((log) => {
+          {filteredLogs.map((log, idx) => {
             const cfg = levelConfig[log.level as keyof typeof levelConfig] ?? levelConfig.info;
             return (
               <div
-                key={log.id}
+                key={log.id || `${log.timestamp}-${log.service}-${idx}`}
                 className="flex items-start gap-3 py-0.5 px-2 rounded hover:bg-white/5 transition-colors log-line group"
               >
                 <span className="text-[10px] text-gray-600 shrink-0 pt-0.5 w-52">
