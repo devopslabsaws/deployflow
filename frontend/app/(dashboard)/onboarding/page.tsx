@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import * as PopoverPrimitive from "@radix-ui/react-popover";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckCircle2,
@@ -17,6 +18,11 @@ import {
   Upload,
   ExternalLink,
   AlertCircle,
+  Sparkles,
+  ChevronsUpDown,
+  Search,
+  RefreshCw,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,8 +31,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
   useDetectStack,
-  useApplyStack,
   useCreateDeployment,
   type DetectedStackDto,
 } from "@/hooks/use-api";
@@ -59,6 +72,34 @@ const FRAMEWORK_COLORS: Record<string, string> = {
   Nestjs: "bg-red-600 text-white",
 };
 
+/** Fetch public branch list from GitHub or GitLab */
+async function fetchRepoBranches(repoUrl: string): Promise<string[]> {
+  const githubMatch = repoUrl.match(/github\.com\/([^/]+)\/([^/?.#]+)/);
+  const gitlabMatch = repoUrl.match(/gitlab\.com\/([^/]+(?:\/[^/]+)*)\/([^/?.#]+)/);
+
+  if (githubMatch) {
+    const [, owner, repo] = githubMatch;
+    const res = await fetch(
+      `https://api.github.com/repos/${owner}/${repo.replace(/\.git$/, "")}/branches?per_page=100`,
+      { headers: { Accept: "application/vnd.github+json" } },
+    );
+    if (!res.ok) throw new Error("Could not fetch branches — repository may be private.");
+    const data = await res.json();
+    return (data as any[]).map((b) => b.name as string);
+  }
+
+  if (gitlabMatch) {
+    const [, namespace, repo] = gitlabMatch;
+    const encoded = encodeURIComponent(`${namespace}/${repo.replace(/\.git$/, "")}`);
+    const res = await fetch(`https://gitlab.com/api/v4/projects/${encoded}/repository/branches?per_page=100`);
+    if (!res.ok) throw new Error("Could not fetch branches — repository may be private.");
+    const data = await res.json();
+    return (data as any[]).map((b) => b.name as string);
+  }
+
+  return [];
+}
+
 /** Parse owner/repo from a GitHub or GitLab URL */
 function parseGitRepo(url: string): { host: "github" | "gitlab" | null; owner: string; repo: string } | null {
   try {
@@ -74,6 +115,17 @@ function parseGitRepo(url: string): { host: "github" | "gitlab" | null; owner: s
   }
 }
 
+/** Derive a project name from a repo URL, e.g. https://github.com/org/my-app.git → "my-app" */
+function getRepoName(url: string): string {
+  try {
+    const clean = url.replace(/\.git$/, "").replace(/\/$/, "");
+    const parts = new URL(clean).pathname.split("/").filter(Boolean);
+    return parts[parts.length - 1] ?? "new-project";
+  } catch {
+    return "new-project";
+  }
+}
+
 export default function OnboardingPage() {
   const [currentStep, setCurrentStep] = useState(1);
   const [maxVisitedStep, setMaxVisitedStep] = useState(1);
@@ -83,16 +135,78 @@ export default function OnboardingPage() {
   const [detectedStack, setDetectedStack] = useState<DetectedStackDto | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [selectedServerId, setSelectedServerId] = useState("");
+  const [autoDetectedProjectId, setAutoDetectedProjectId] = useState<string | null>(null);
+  const [branch, setBranch] = useState("main");
+  const [projectName, setProjectName] = useState("");
+  const [branches, setBranches] = useState<string[]>([]);
+  const [fetchingBranches, setFetchingBranches] = useState(false);
+  const branchFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [repoUrlError, setRepoUrlError] = useState("");
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
   const [fetching, setFetching] = useState(false);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
   const [deploymentData, setDeploymentData] = useState<Deployment | null>(null);
+  const [isAutoCreating, setIsAutoCreating] = useState(false);
+  const [deploymentEnvironments, setDeploymentEnvironments] = useState([
+    { environmentName: "Dev", branch: "dev", autoDeploy: true, requiresApproval: false, isDefault: false, order: 1 },
+    { environmentName: "QA", branch: "staging", autoDeploy: true, requiresApproval: false, isDefault: false, order: 2 },
+    { environmentName: "Prod", branch: "main", autoDeploy: true, requiresApproval: true, isDefault: true, order: 3 },
+  ]);
 
   const detectStack = useDetectStack();
   const createDeployment = useCreateDeployment();
   const queryClient = useQueryClient();
   const { data: projects } = useProjects();
   const { data: servers } = useServers();
+
+  // Auto-fetch branches when a valid GitHub/GitLab URL is entered (debounced)
+  useEffect(() => {
+    if (branchFetchTimerRef.current) clearTimeout(branchFetchTimerRef.current);
+    if (!repoUrl || !parseGitRepo(repoUrl)) {
+      setBranches([]);
+      return;
+    }
+    setBranches([]);
+    branchFetchTimerRef.current = setTimeout(async () => {
+      setFetchingBranches(true);
+      try {
+        const result = await fetchRepoBranches(repoUrl);
+        setBranches(result);
+        if (result.length > 0) {
+          const defaultBranch = result.includes("main") ? "main" : result[0];
+          setBranch(defaultBranch);
+        }
+      } catch {
+        setBranches([]);
+      } finally {
+        setFetchingBranches(false);
+      }
+    }, 800);
+    return () => { if (branchFetchTimerRef.current) clearTimeout(branchFetchTimerRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repoUrl]);
+
+  // Auto-detect project from repo URL
+  useEffect(() => {
+    if (!repoUrl || !projects?.data?.length) return;
+    const normalize = (u: string) => u.replace(/\.git$/, "").replace(/\/$/, "").toLowerCase();
+    const normalizedRepo = normalize(repoUrl);
+    const match = projects.data.find(
+      (p) => p.repositoryUrl && normalize(p.repositoryUrl) === normalizedRepo
+    );
+    if (match) {
+      setAutoDetectedProjectId(match.id);
+      setSelectedProjectId(match.id);
+    } else {
+      setAutoDetectedProjectId(null);
+    }
+  }, [repoUrl, projects?.data]);
+
+  useEffect(() => {
+    if (!projectName && repoUrl) {
+      setProjectName(getRepoName(repoUrl));
+    }
+  }, [projectName, repoUrl]);
 
   function goToStep(step: number) {
     setCurrentStep(step);
@@ -166,30 +280,108 @@ export default function OnboardingPage() {
     );
   }
 
-  const applyStack = useApplyStack(selectedProjectId);
-  function handleApply() {
-    if (!selectedProjectId || !detectedStack) return;
-    applyStack.mutate(
-      { framework: detectedStack.framework },
+  async function handleApplyWithCreate() {
+    if (!detectedStack) return;
+    let projectId = selectedProjectId;
+    setIsAutoCreating(true);
+    try {
+      // Auto-create project from repo URL if no project is selected
+      if (!projectId) {
+        if (!repoUrl) { toast.error("No repository URL — go back to step 1."); return; }
+        const finalProjectName = projectName.trim() || getRepoName(repoUrl);
+        const created = await apiClient.post<{ id: string }>("/projects", {
+          name: finalProjectName,
+          description: `Auto-created via onboarding from ${repoUrl}`,
+          repositoryUrl: repoUrl,
+          branch: branch,
+          buildCommand: detectedStack.buildCommand,
+          startCommand: detectedStack.startCommand,
+          installCommand: detectedStack.installCommand || null,
+          dockerfilePath: null,
+          framework: detectedStack.framework,
+          customDomain: null,
+          autoDeploy: true,
+          tags: [],
+          assignedServerId: selectedServerId || null,
+        });
+        projectId = (created as any).id;
+        setSelectedProjectId(projectId!);
+        await queryClient.invalidateQueries({ queryKey: ["projects"] });
+        toast.success(`Project "${finalProjectName}" created!`);
+      }
+
+      // Persist the selected branch/server even when the deployment-environments API is unavailable.
+      if (selectedServerId || branch) {
+        await apiClient.put(`/projects/${projectId}`, {
+          branch,
+          assignedServerId: selectedServerId || null,
+        });
+      }
+
+      // Save environment-to-branch routing for multi-branch deployments
+      try {
+        await apiClient.put(`/projects/${projectId}/deployment-environments/bulk`, {
+          items: deploymentEnvironments
+            .filter((x) => x.environmentName.trim() && x.branch.trim())
+            .map((x, idx) => ({
+              environmentName: x.environmentName.trim(),
+              branch: x.branch.trim(),
+              autoDeploy: x.autoDeploy,
+              requiresApproval: x.requiresApproval,
+              isDefault: x.isDefault,
+              order: idx + 1,
+            })),
+        });
+      } catch (e: any) {
+        if (!String(e?.message ?? "").includes("404")) {
+          throw e;
+        }
+
+        toast.warning("Branch routing API is unavailable on the current backend. Continuing with project defaults.");
+      }
+
+      // Apply detected stack settings to the project
+      await apiClient.post(`/stack-detection/apply/${projectId}`, { framework: detectedStack.framework });
+
+      // Auto-create and scaffold a smart default pipeline based on detected stack
+      const pipeline = await apiClient.post<any>("/pipelines", {
+        name: `${(projectName.trim() || getRepoName(repoUrl))} default pipeline`,
+        description: "Auto-generated during onboarding",
+        projectId,
+        trigger: "push",
+        cronExpression: null,
+      });
+
+      await apiClient.post(`/pipelines/${pipeline.id}/scaffold`, {
+        projectName: projectName.trim() || getRepoName(repoUrl),
+        repoFiles: fileList.split("\n").map((x) => x.trim()).filter(Boolean),
+        packageJsonContent: packageJson || undefined,
+        branch,
+      });
+
+      // Initialize project webhooks so branch-based auto deploy can be wired immediately.
+      await apiClient.get(`/projects/${projectId}/webhooks`);
+
+      toast.success("Stack settings applied.");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Operation failed");
+      setIsAutoCreating(false);
+      return;
+    }
+    setIsAutoCreating(false);
+    // Trigger the deployment
+    createDeployment.mutate(
+      { projectId: projectId!, trigger: "manual" },
       {
-        onSuccess: () => {
-          toast.success("Stack settings applied to project");
-          createDeployment.mutate(
-            { projectId: selectedProjectId, trigger: "manual" },
-            {
-              onSuccess: (deployment) => {
-                setDeploymentId((deployment as any).id ?? (deployment as any).deploymentId ?? null);
-                goToStep(5);
-                toast.success("Deployment triggered!");
-              },
-              onError: () => {
-                goToStep(5);
-                toast.warning("Stack applied — but deployment could not be triggered automatically.");
-              },
-            }
-          );
+        onSuccess: (deployment) => {
+          setDeploymentId((deployment as any).id ?? (deployment as any).deploymentId ?? null);
+          goToStep(5);
+          toast.success("Deployment triggered!");
         },
-        onError: () => toast.error("Failed to apply stack"),
+        onError: () => {
+          goToStep(5);
+          toast.warning("Stack applied — but deployment could not be triggered automatically.");
+        },
       }
     );
   }
@@ -285,26 +477,133 @@ export default function OnboardingPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="repo">Repository URL</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="repo">Repository URL</Label>
+                    <TooltipProvider delayDuration={200}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs space-y-1">
+                          <p className="font-semibold">Supported formats</p>
+                          <p className="font-mono text-[11px]">https://github.com/owner/repo</p>
+                          <p className="font-mono text-[11px]">https://github.com/owner/repo.git</p>
+                          <p className="font-mono text-[11px]">https://gitlab.com/owner/repo</p>
+                          <p className="mt-1 text-[11px] text-primary-foreground/70">Private repos require manual file list</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
                   <Input
                     id="repo"
-                    placeholder="https://github.com/org/repo"
+                    placeholder="https://github.com/owner/repo"
                     value={repoUrl}
-                    onChange={(e) => setRepoUrl(e.target.value)}
+                    onChange={(e) => {
+                      setRepoUrl(e.target.value);
+                      setRepoUrlError("");
+                    }}
+                    className={repoUrlError ? "border-destructive" : ""}
                   />
+                  {repoUrlError && (
+                    <p className="text-xs text-destructive">{repoUrlError}</p>
+                  )}
+                  {repoUrl && !repoUrlError && (
+                    <p className="text-xs text-muted-foreground">
+                      Project name: <span className="font-semibold text-foreground">{getRepoName(repoUrl)}</span>
+                      {!parseGitRepo(repoUrl) && (
+                        <span className="ml-1 text-amber-500">(manual file list required — private or non-GitHub URL)</span>
+                      )}
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="projectName">Project Name (optional)</Label>
+                  <Input
+                    id="projectName"
+                    placeholder="my-app"
+                    value={projectName}
+                    onChange={(e) => setProjectName(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">You can override the auto-detected name from repository URL.</p>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="branch">Branch</Label>
+                    {fetchingBranches && (
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin" />Fetching branches…
+                      </span>
+                    )}
+                    {!fetchingBranches && branches.length > 0 && (
+                      <span className="text-xs text-muted-foreground">{branches.length} branch{branches.length !== 1 ? "es" : ""} found</span>
+                    )}
+                  </div>
+                  {branches.length > 0 ? (
+                    <div className="flex gap-2">
+                      <Select value={branch} onValueChange={setBranch}>
+                        <SelectTrigger className="flex-1">
+                          <GitBranch className="h-4 w-4 mr-2 text-muted-foreground shrink-0" />
+                          <SelectValue placeholder="Select a branch…" />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-56">
+                          {branches.map((b) => (
+                            <SelectItem key={b} value={b}>
+                              <span className="flex items-center gap-2">
+                                <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />{b}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        type="button" variant="outline" size="icon"
+                        disabled={fetchingBranches}
+                        onClick={async () => {
+                          setFetchingBranches(true);
+                          try { setBranches(await fetchRepoBranches(repoUrl)); } catch { /* ignore */ }
+                          finally { setFetchingBranches(false); }
+                        }}
+                        title="Refresh branch list"
+                      >
+                        {fetchingBranches ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <GitBranch className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="branch"
+                        placeholder="main"
+                        value={branch}
+                        onChange={(e) => setBranch(e.target.value || "main")}
+                        className="pl-9"
+                      />
+                    </div>
+                  )}
+                  {!branches.length && !fetchingBranches && parseGitRepo(repoUrl) && (
+                    <p className="text-xs text-muted-foreground">Enter a branch name or wait for auto-detection from public repos.</p>
+                  )}
                 </div>
                 <Button
                   className="w-full"
-                  disabled={!repoUrl}
+                  disabled={!repoUrl || fetching}
                   onClick={async () => {
+                    // Validate URL format
+                    if (repoUrl && !repoUrl.startsWith("http")) {
+                      setRepoUrlError("Please enter a full HTTPS URL (e.g. https://github.com/org/repo)");
+                      return;
+                    }
                     goToStep(2);
-                    // Auto-fetch if it's a public GitHub/GitLab repo
                     if (parseGitRepo(repoUrl)) {
                       await handleFetchFiles();
                     }
                   }}
                 >
-                  Continue <ChevronRight className="ml-2 w-4 h-4" />
+                  {fetching ? (
+                    <><Loader2 className="mr-2 w-4 h-4 animate-spin" />Fetching files…</>
+                  ) : (
+                    <>Continue <ChevronRight className="ml-2 w-4 h-4" /></>
+                  )}
                 </Button>
               </CardContent>
             </Card>
@@ -391,21 +690,63 @@ export default function OnboardingPage() {
                     <CardDescription className="mt-1">{detectedStack.explanation}</CardDescription>
                   </div>
                   <Badge
-                    className={FRAMEWORK_COLORS[detectedStack.framework] ?? "bg-muted text-foreground"}
+                    className={FRAMEWORK_COLORS[detectedStack.framework === "Unknown" ? "Nodejs" : detectedStack.framework] ?? "bg-muted text-foreground"}
                   >
-                    {detectedStack.framework}
+                    {detectedStack.framework === "Unknown" ? "Nodejs" : detectedStack.framework}
                   </Badge>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
+                  <p className="text-sm font-medium">Multi-Branch Deployment Environments</p>
+                  <p className="text-xs text-muted-foreground">Map each environment to a branch. Webhooks will auto-deploy matching branches.</p>
+                  {deploymentEnvironments.map((row, idx) => (
+                    <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+                      <Input
+                        className="col-span-3"
+                        placeholder="Environment"
+                        value={row.environmentName}
+                        onChange={(e) => setDeploymentEnvironments((prev) => prev.map((r, i) => i === idx ? { ...r, environmentName: e.target.value } : r))}
+                      />
+                      <Input
+                        className="col-span-3"
+                        placeholder="branch"
+                        value={row.branch}
+                        onChange={(e) => setDeploymentEnvironments((prev) => prev.map((r, i) => i === idx ? { ...r, branch: e.target.value } : r))}
+                      />
+                      <label className="col-span-2 text-xs flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={row.autoDeploy}
+                          onChange={(e) => setDeploymentEnvironments((prev) => prev.map((r, i) => i === idx ? { ...r, autoDeploy: e.target.checked } : r))}
+                        /> Auto
+                      </label>
+                      <label className="col-span-2 text-xs flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={row.requiresApproval}
+                          onChange={(e) => setDeploymentEnvironments((prev) => prev.map((r, i) => i === idx ? { ...r, requiresApproval: e.target.checked } : r))}
+                        /> Approval
+                      </label>
+                      <label className="col-span-2 text-xs flex items-center gap-1.5">
+                        <input
+                          type="radio"
+                          name="default-env"
+                          checked={row.isDefault}
+                          onChange={() => setDeploymentEnvironments((prev) => prev.map((r, i) => ({ ...r, isDefault: i === idx })))}
+                        /> Default
+                      </label>
+                    </div>
+                  ))}
+                </div>
                 {detectedStack.suggestedEnvVars?.length > 0 && (
                   <div className="space-y-3">
                     <p className="text-sm font-medium text-muted-foreground">
                       Suggested environment variables
                     </p>
                     {detectedStack.suggestedEnvVars.map((key) => (
-                      <div key={key} className="flex items-center gap-2">
-                        <Label className="w-56 shrink-0 font-mono text-xs">{key}</Label>
+                      <div key={key} className="space-y-1.5">
+                        <Label className="font-mono text-xs break-all">{key}</Label>
                         <Input
                           placeholder="value"
                           value={envVars[key] ?? ""}
@@ -445,76 +786,86 @@ export default function OnboardingPage() {
                   <Server className="w-5 h-5" /> Link to project &amp; server
                 </CardTitle>
                 <CardDescription>
-                  Select an existing project to apply the detected stack settings.
+                  {autoDetectedProjectId
+                    ? "Repository matched an existing project — ready to deploy."
+                    : selectedProjectId
+                    ? "Stack settings will be applied to the selected project."
+                    : `No matching project found. A new project \"${getRepoName(repoUrl)}\" will be created automatically.`}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Project</Label>
-                  <div className="grid gap-2">
-                    {(projects?.data ?? []).slice(0, 8).map((p) => (
-                      <button
-                        key={p.id}
-                        onClick={() => setSelectedProjectId(p.id)}
-                        className={cn(
-                          "text-left px-4 py-3 rounded-lg border transition-all text-sm",
-                          selectedProjectId === p.id
-                            ? "border-primary bg-primary/5"
-                            : "border-border hover:border-primary/50"
-                        )}
-                      >
-                        <span className="font-medium">{p.name}</span>
-                        {p.repositoryUrl && (
-                          <span className="ml-2 text-muted-foreground text-xs truncate">
-                            {p.repositoryUrl}
-                          </span>
-                        )}
-                      </button>
-                    ))}
+                  <div className="flex items-center justify-between">
+                    <Label>Project</Label>
+                    {autoDetectedProjectId && (
+                      <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                        <Sparkles className="w-3 h-3" /> Auto-detected from repository URL
+                      </span>
+                    )}
                   </div>
+                  <SearchableSelect
+                    items={(projects?.data ?? []).map((p) => ({
+                      id: p.id,
+                      label: p.name,
+                      subtitle: p.repositoryUrl ?? undefined,
+                      highlighted: p.id === autoDetectedProjectId,
+                    }))}
+                    value={selectedProjectId}
+                    onSelect={setSelectedProjectId}
+                    placeholder="Search and select a project…"
+                    emptyMessage="No projects found"
+                    icon={<GitBranch className="w-4 h-4" />}
+                  />
                 </div>
-                {(servers ?? []).length > 0 && (
-                  <div className="space-y-2">
-                    <Label>Server <span className="text-muted-foreground font-normal">(optional — uses project default if not selected)</span></Label>
-                    <div className="grid gap-2">
-                      {(servers ?? []).slice(0, 6).map((s: any) => (
-                        <button
-                          key={s.id}
-                          onClick={() => setSelectedServerId(selectedServerId === s.id ? "" : s.id)}
-                          className={cn(
-                            "text-left px-4 py-3 rounded-lg border transition-all text-sm flex items-center gap-3",
-                            selectedServerId === s.id
-                              ? "border-primary bg-primary/5"
-                              : "border-border hover:border-primary/50"
-                          )}
-                        >
-                          <Server className="w-4 h-4 shrink-0 text-muted-foreground" />
-                          <div>
-                            <span className="font-medium">{s.name}</span>
-                            {s.ipAddress && (
-                              <span className="ml-2 text-muted-foreground text-xs">{s.ipAddress}</span>
-                            )}
-                          </div>
-                        </button>
-                      ))}
+
+                {/* Auto-create banner — shown when repo URL is set but no project matched */}
+                {!selectedProjectId && repoUrl && (
+                  <div className="flex items-start gap-2.5 rounded-lg border border-blue-500/30 bg-blue-500/8 px-3.5 py-3">
+                    <Sparkles className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium text-blue-300">Auto-create project</p>
+                      <p className="text-xs text-blue-400/80">
+                        A new project{" "}
+                        <span className="font-mono font-semibold">&quot;{getRepoName(repoUrl)}&quot;</span>{" "}
+                        will be created with the{detectedStack ? ` ${detectedStack.framework}` : ""} stack settings
+                        from <span className="font-mono">{repoUrl}</span>, then deployed automatically.
+                      </p>
                     </div>
                   </div>
                 )}
+
+                <div className="space-y-2">
+                  <Label>Server <span className="text-muted-foreground font-normal">(optional — uses project default if not selected)</span></Label>
+                  <SearchableSelect
+                    items={(servers ?? []).map((s: any) => ({
+                      id: s.id,
+                      label: s.name,
+                      subtitle: s.ipAddress ?? undefined,
+                    }))}
+                    value={selectedServerId}
+                    onSelect={(id) => setSelectedServerId(selectedServerId === id ? "" : id)}
+                    placeholder="Search and select a server… (optional)"
+                    emptyMessage="No servers found"
+                    icon={<Server className="w-4 h-4" />}
+                    clearable
+                    onClear={() => setSelectedServerId("")}
+                  />
+                </div>
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={() => setCurrentStep(3)}>
                     <ChevronLeft className="mr-2 w-4 h-4" /> Back
                   </Button>
                   <Button
                     className="flex-1"
-                    disabled={!selectedProjectId || applyStack.isPending || createDeployment.isPending}
-                    onClick={handleApply}
+                    disabled={isAutoCreating || createDeployment.isPending || (!selectedProjectId && !repoUrl)}
+                    onClick={handleApplyWithCreate}
                   >
-                    {(applyStack.isPending || createDeployment.isPending) ? (
+                    {(isAutoCreating || createDeployment.isPending) ? (
                       <Loader2 className="mr-2 w-4 h-4 animate-spin" />
                     ) : (
                       <Upload className="mr-2 w-4 h-4" />
                     )}
-                    Apply &amp; Deploy
+                    {selectedProjectId ? "Apply & Deploy" : "Create project & Deploy"}
                   </Button>
                 </div>
               </CardContent>
@@ -612,5 +963,189 @@ export default function OnboardingPage() {
         </motion.div>
       </AnimatePresence>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SearchableSelect – virtualized combobox using Radix Popover + cmdk Command
+// Handles 100+ items with type-ahead search and lazy-rendered list
+// ---------------------------------------------------------------------------
+type SelectItem = {
+  id: string;
+  label: string;
+  subtitle?: string;
+  highlighted?: boolean;
+};
+
+function SearchableSelect({
+  items,
+  value,
+  onSelect,
+  placeholder,
+  emptyMessage,
+  icon,
+  clearable,
+  onClear,
+}: {
+  items: SelectItem[];
+  value: string;
+  onSelect: (id: string) => void;
+  placeholder: string;
+  emptyMessage: string;
+  icon?: React.ReactNode;
+  clearable?: boolean;
+  onClear?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selected = items.find((i) => i.id === value);
+
+  const filtered = React.useMemo(() => {
+    if (!query) return items;
+    const q = query.toLowerCase();
+    return items.filter(
+      (i) =>
+        i.label.toLowerCase().includes(q) ||
+        (i.subtitle ?? "").toLowerCase().includes(q)
+    );
+  }, [items, query]);
+
+  // Focus search input when popover opens
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => inputRef.current?.focus(), 50);
+    } else {
+      setQuery("");
+    }
+  }, [open]);
+
+  return (
+    <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
+      <PopoverPrimitive.Trigger asChild>
+        <button
+          type="button"
+          className={cn(
+            "w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border text-sm transition-all",
+            "bg-background hover:border-primary/60 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+            open ? "border-primary ring-2 ring-ring ring-offset-2" : "border-border"
+          )}
+          aria-expanded={open}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            {icon && <span className="text-muted-foreground shrink-0">{icon}</span>}
+            {selected ? (
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-medium truncate">{selected.label}</span>
+                {selected.highlighted && (
+                  <Badge className="h-4 px-1 text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
+                    <Sparkles className="w-2.5 h-2.5 mr-0.5" /> Auto
+                  </Badge>
+                )}
+                {selected.subtitle && (
+                  <span className="text-muted-foreground text-xs truncate hidden sm:block">
+                    {selected.subtitle}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <span className="text-muted-foreground">{placeholder}</span>
+            )}
+          </div>
+          <ChevronsUpDown className="w-4 h-4 text-muted-foreground shrink-0" />
+        </button>
+      </PopoverPrimitive.Trigger>
+
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Content
+          sideOffset={4}
+          align="start"
+          className={cn(
+            "z-50 w-[var(--radix-popover-trigger-width)] min-w-[220px]",
+            "rounded-lg border bg-popover shadow-md",
+            "data-[state=open]:animate-in data-[state=closed]:animate-out",
+            "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+            "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
+          )}
+        >
+          {/* Search */}
+          <div className="flex items-center border-b px-3 py-2 gap-2">
+            <Search className="w-4 h-4 text-muted-foreground shrink-0" />
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search…"
+              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            />
+            {query && (
+              <button
+                onClick={() => setQuery("")}
+                className="text-muted-foreground hover:text-foreground text-xs px-1"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* List */}
+          <div className="max-h-[280px] overflow-y-auto overscroll-contain py-1">
+            {filtered.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">{emptyMessage}</p>
+            ) : (
+              filtered.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    onSelect(item.id);
+                    setOpen(false);
+                  }}
+                  className={cn(
+                    "w-full flex items-center justify-between gap-2 px-3 py-2 text-sm transition-colors text-left",
+                    "hover:bg-accent hover:text-accent-foreground",
+                    value === item.id && "bg-primary/5 text-primary font-medium"
+                  )}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate">{item.label}</span>
+                        {item.highlighted && (
+                          <Sparkles className="w-3 h-3 text-emerald-500 shrink-0" />
+                        )}
+                      </div>
+                      {item.subtitle && (
+                        <p className="text-xs text-muted-foreground truncate">{item.subtitle}</p>
+                      )}
+                    </div>
+                  </div>
+                  {value === item.id && (
+                    <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+
+          {/* Clear option */}
+          {clearable && value && (
+            <div className="border-t py-1">
+              <button
+                type="button"
+                onClick={() => {
+                  onClear?.();
+                  setOpen(false);
+                }}
+                className="w-full px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent text-left transition-colors"
+              >
+                Clear selection
+              </button>
+            </div>
+          )}
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
   );
 }
