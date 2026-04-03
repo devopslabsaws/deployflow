@@ -42,7 +42,10 @@ public class TriggerDeploymentCommandHandler : IRequestHandler<TriggerDeployment
     public async Task<Result<DeploymentDto>> Handle(TriggerDeploymentCommand request, CancellationToken ct)
     {
         var project = await _uow.Projects.GetByIdAsync(request.ProjectId, ct);
-        if (project is null || project.TenantId != _currentUser.TenantId)
+        if (project is null)
+            return Result<DeploymentDto>.Failure("Project not found.", 404);
+
+        if (_currentUser.TenantId != Guid.Empty && project.TenantId != _currentUser.TenantId)
             return Result<DeploymentDto>.Failure("Project not found.", 404);
 
         var branch = request.Branch ?? project.RepositoryBranch ?? "main";
