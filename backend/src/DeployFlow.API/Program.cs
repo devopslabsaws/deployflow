@@ -28,6 +28,7 @@ builder.Host.UseSerilog();
 // ─── Application & Infrastructure Layers ──────────────────────────────────────
 builder.Services.AddApplicationLayer();
 builder.Services.AddInfrastructureLayer(builder.Configuration);
+builder.Services.Configure<FeatureFlagsOptions>(builder.Configuration.GetSection("FeatureFlags"));
 // NOTE: Identity (UserManager, RoleManager, stores, password options) is fully
 // registered inside AddInfrastructureLayer — do NOT call AddIdentityCore again.
 

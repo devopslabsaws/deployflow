@@ -38,7 +38,10 @@ public class UnitOfWork : IUnitOfWork
     public ITenantRepository<ProvisioningJob> ProvisioningJobs { get; }
     public ITenantRepository<RecoveryRule> RecoveryRules { get; }
     public ITenantRepository<PreviewEnvironment> PreviewEnvironments { get; }
+    public ITenantRepository<ProjectDeploymentEnvironment> ProjectDeploymentEnvironments { get; }
     public ITenantRepository<OutboundWebhookConfig> OutboundWebhooks { get; }
+    public ITenantRepository<PolicyTemplate> PolicyTemplates { get; }
+    public ITenantRepository<ProjectSlo> ProjectSlos { get; }
 
     public UnitOfWork(
         ApplicationDbContext db,
@@ -69,7 +72,10 @@ public class UnitOfWork : IUnitOfWork
         ITenantRepository<ProvisioningJob> provisioningJobs,
         ITenantRepository<RecoveryRule> recoveryRules,
         ITenantRepository<PreviewEnvironment> previewEnvironments,
-        ITenantRepository<OutboundWebhookConfig> outboundWebhooks)
+        ITenantRepository<ProjectDeploymentEnvironment> projectDeploymentEnvironments,
+        ITenantRepository<OutboundWebhookConfig> outboundWebhooks,
+        ITenantRepository<PolicyTemplate> policyTemplates,
+        ITenantRepository<ProjectSlo> projectSlos)
     {
         _db = db;
         Projects = projects;
@@ -99,7 +105,10 @@ public class UnitOfWork : IUnitOfWork
         ProvisioningJobs = provisioningJobs;
         RecoveryRules = recoveryRules;
         PreviewEnvironments = previewEnvironments;
+        ProjectDeploymentEnvironments = projectDeploymentEnvironments;
         OutboundWebhooks = outboundWebhooks;
+        PolicyTemplates = policyTemplates;
+        ProjectSlos = projectSlos;
     }
 
     public Task<int> SaveChangesAsync(CancellationToken ct = default)

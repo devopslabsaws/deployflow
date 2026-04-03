@@ -242,6 +242,10 @@ public class PipelineStage : BaseEntity
     public int Order { get; set; }
     public PipelineStageStatus Status { get; set; } = PipelineStageStatus.Pending;
     public bool RunParallel { get; set; }
+    /// <summary>Comma-separated stage names this stage depends on (DAG edges).</summary>
+    public string? DependsOn { get; set; }
+    /// <summary>When true, stage execution continues even if a step fails.</summary>
+    public bool ContinueOnFailure { get; set; }
     public ICollection<PipelineStep> Steps { get; set; } = new List<PipelineStep>();
 }
 
@@ -256,6 +260,8 @@ public class PipelineStep : BaseEntity
     public string ConfigJson { get; set; } = "{}";
     public TimeSpan? Duration { get; set; }
     public int? Timeout { get; set; }
+    /// <summary>Number of times to retry a failed step (0 = no retry).</summary>
+    public int? RetryCount { get; set; }
 }
 
 public enum PipelineStatus { Idle, Running, Success, Failed, Cancelled }

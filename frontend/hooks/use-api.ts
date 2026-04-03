@@ -242,7 +242,9 @@ export function useProjects(params?: { status?: string; search?: string; page?: 
         data: items.map(normalizeProject),
       } as PaginatedResponse<Project>;
     },
-    staleTime: 30_000,
+    staleTime: 3 * 60 * 1000, // 3 minutes - projects list
+    gcTime: 10 * 60 * 1000, // 10 minutes - keep in cache longer
+    refetchOnWindowFocus: false, // Avoid unnecessary refetches on tab switch
   });
 }
 
@@ -254,7 +256,8 @@ export function useProject(id: string) {
       return normalizeProject(dto) as Project;
     },
     enabled: !!id,
-    staleTime: 30_000,
+    staleTime: 5 * 60 * 1000, // 5 minutes - detail pages rarely change
+    refetchOnWindowFocus: false, // Avoid refetch when user returns to tab
   });
 }
 
@@ -320,18 +323,26 @@ export function useDeployments(params?: {
   page?: number;
   pageSize?: number;
 }) {
+  // Default to paginating with 15 items per page for better performance
+  const finalParams = {
+    pageSize: 15,
+    ...params,
+  };
+  
   return useQuery({
-    queryKey: queryKeys.deployments.list(params),
+    queryKey: queryKeys.deployments.list(finalParams),
     queryFn: async () => {
-      const result = await apiClient.get<any>("/deployments", { params });
+      const result = await apiClient.get<any>("/deployments", { params: finalParams });
       const items: any[] = Array.isArray(result) ? result : (result?.data ?? []);
       return {
         ...(Array.isArray(result) ? { total: items.length, page: 1, pageSize: items.length, totalPages: 1 } : result),
         data: items.map(normalizeDeployment),
       } as PaginatedResponse<Deployment>;
     },
-    staleTime: 30_000,
+    staleTime: 2 * 60 * 1000, // 2 minutes - deployments may update more frequently
+    gcTime: 10 * 60 * 1000, // 10 minutes - keep in cache longer
     placeholderData: keepPreviousData,
+    refetchOnWindowFocus: false, // Avoid unnecessary refetches
   });
 }
 
@@ -343,7 +354,8 @@ export function useDeployment(id: string) {
       return normalizeDeployment(dto) as Deployment;
     },
     enabled: !!id,
-    staleTime: 5_000,
+    staleTime: 10_000, // 10 seconds - still monitor active deployments
+    gcTime: 5 * 60 * 1000, // 5 minutes - cache completed deployments longer
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       return ["queued", "building", "deploying"].includes(status ?? "") ? 5_000 : false;
@@ -368,6 +380,25 @@ export function useRunnerStatus(enabled = true) {
     enabled,
     staleTime: 8_000,
     refetchInterval: 10_000,
+  });
+}
+
+export interface PreflightCheckResult {
+  name: string;
+  status: "pass" | "warn" | "fail";
+  message?: string;
+}
+
+export interface PreflightReport {
+  canDeploy: boolean;
+  checks: PreflightCheckResult[];
+  generatedAt: string;
+}
+
+export function useRunPreflight() {
+  return useMutation({
+    mutationFn: (projectId: string) =>
+      apiClient.post<PreflightReport>(`/deployments/preflight/${projectId}`),
   });
 }
 
@@ -620,10 +651,22 @@ export function useServerContainers(serverId: string, enabled = true) {
   return useQuery({
     queryKey: [...queryKeys.servers.detail(serverId), "containers"],
     queryFn: async (): Promise<ContainerInfo[]> => {
-      const result = await apiClient.post<{ stdOut: string; stdErr: string; exitCode: number; success: boolean }>(
-        `/servers/${serverId}/exec`,
-        { command: "docker ps --format '{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}'" }
-      );
+      let result: { stdOut?: string; stdErr?: string; exitCode?: number; success?: boolean };
+      try {
+        result = await apiClient.post<{ stdOut: string; stdErr: string; exitCode: number; success: boolean }>(
+          `/servers/${serverId}/exec`,
+          { command: "docker ps --format '{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}'" }
+        );
+      } catch (e: any) {
+        // If exec endpoint returns 400 (no SSH key) or 4xx treat as no containers / not configured
+        // rather than throwing so we get an empty list with a helpful message, not a crash.
+        if (e?.response?.status === 400 || e?.response?.status === 422) {
+          return [];
+        }
+        throw e;
+      }
+      // Server may return success=false if Docker isn't running — return empty rather than error
+      if (!result.success && !result.stdOut?.trim()) return [];
       if (!result.stdOut?.trim()) return [];
       return result.stdOut
         .trim()
@@ -974,7 +1017,7 @@ export function usePipelineRun(runId: string) {
   });
 }
 
-export function usePipelineRunLogs(runId: string, page = 1, pageSize = 200) {
+export function usePipelineRunLogs(runId: string, page = 1, pageSize = 200, liveMode = false) {
   return useQuery({
     queryKey: queryKeys.pipelineRuns.logs(runId, page, pageSize),
     queryFn: async () => {
@@ -988,8 +1031,8 @@ export function usePipelineRunLogs(runId: string, page = 1, pageSize = 200) {
       };
     },
     enabled: !!runId,
-    staleTime: 5_000,
-    refetchInterval: MOCK ? false : 5000,
+    staleTime: liveMode ? 0 : 5_000,
+    refetchInterval: MOCK ? false : (liveMode ? 1500 : 8000),
   });
 }
 
@@ -2213,6 +2256,133 @@ export interface AiChatResult {
   quickReplies: string[];
 }
 
+export interface AiTimelineEvent {
+  at: string;
+  title: string;
+  detail: string;
+  tone: string;
+}
+
+export interface AiActionPlan {
+  label: string;
+  detail: string;
+  actionType: string;
+  riskLevel: string;
+  command?: string | null;
+}
+
+export interface AiIncidentCommander {
+  deploymentId: string;
+  projectId: string;
+  projectName: string;
+  severity: string;
+  confidence: number;
+  summary: string;
+  likelyCause: string;
+  blastRadius: string;
+  recommendedDecision: string;
+  sloStatus?: string | null;
+  timeline: AiTimelineEvent[];
+  actionPlan: AiActionPlan[];
+  activeSignals: string[];
+  generatedAt: string;
+}
+
+export interface AiRiskFactor {
+  name: string;
+  category: string;
+  impact: number;
+  detail: string;
+}
+
+export interface AiRiskAssessment {
+  projectId: string;
+  projectName: string;
+  branch: string;
+  environment: string;
+  score: number;
+  level: string;
+  verdict: string;
+  summary: string;
+  suggestedRollout: string;
+  factors: AiRiskFactor[];
+  recommendedActions: string[];
+  generatedAt: string;
+}
+
+export interface AiPolicyDraft {
+  name: string;
+  description: string;
+  appliesTo: string;
+  requiredApprovals: number;
+  requiredApproverRole?: string | null;
+  autoApprovePattern?: string | null;
+  allowedHoursUtc?: string | null;
+  isEnabled: boolean;
+}
+
+export interface AiPolicySimulation {
+  prompt: string;
+  parsedIntent: string;
+  impactedProjectCount: number;
+  warnings: string[];
+  drafts: AiPolicyDraft[];
+  generatedAt: string;
+}
+
+export interface AiPreviewQaCheck {
+  area: string;
+  step: string;
+  priority: string;
+  rationale: string;
+}
+
+export interface AiPreviewQaPlan {
+  projectId: string;
+  projectName: string;
+  branch: string;
+  prTitle: string;
+  previewStrategy: string;
+  commentBody: string;
+  checks: AiPreviewQaCheck[];
+  focusAreas: string[];
+  generatedAt: string;
+}
+
+export interface AiPipelineBlueprint {
+  name: string;
+  summary: string;
+  rolloutMode: string;
+  stages: string[];
+  benefits: string[];
+  tradeoffs: string[];
+}
+
+export interface AiPipelineArchitecture {
+  projectId: string;
+  projectName: string;
+  framework: string;
+  recommendation: string;
+  blueprints: AiPipelineBlueprint[];
+  generatedAt: string;
+}
+
+export interface AiOpsMemoryItem {
+  projectId: string;
+  projectName: string;
+  pattern: string;
+  severity: string;
+  occurrences: number;
+  lastSeenAt: string;
+  recommendedFocus: string;
+}
+
+export interface AiOpsMemory {
+  summary: string;
+  items: AiOpsMemoryItem[];
+  generatedAt: string;
+}
+
 export function useAiAnalyzeDeployment(id: string, enabled = false) {
   return useQuery({
     queryKey: ["ai-analysis", id],
@@ -2226,6 +2396,53 @@ export function useAiChat() {
   return useMutation({
     mutationFn: (data: { message: string; deploymentId?: string }) =>
       apiClient.post<AiChatResult>("/ai/chat", data),
+  });
+}
+
+export function useAiIncidentCommander(id?: string, enabled = true) {
+  return useQuery({
+    queryKey: ["ai-incident-commander", id],
+    queryFn: () => apiClient.get<AiIncidentCommander>(`/ai/incident-commander/${id}`),
+    enabled: enabled && !!id,
+    staleTime: 30_000,
+  });
+}
+
+export function useAiRiskAssessment() {
+  return useMutation({
+    mutationFn: (data: { projectId: string; branch?: string; environmentSlug?: string }) =>
+      apiClient.post<AiRiskAssessment>("/ai/risk-assessment", data),
+  });
+}
+
+export function useAiPolicySimulation() {
+  return useMutation({
+    mutationFn: (data: { prompt: string }) =>
+      apiClient.post<AiPolicySimulation>("/ai/policy-simulation", data),
+  });
+}
+
+export function useAiPreviewQa() {
+  return useMutation({
+    mutationFn: (data: { projectId: string; branch: string; prTitle: string; changeSummary?: string }) =>
+      apiClient.post<AiPreviewQaPlan>("/ai/preview-qa", data),
+  });
+}
+
+export function useAiPipelineArchitecture(projectId?: string, enabled = false) {
+  return useQuery({
+    queryKey: ["ai-pipeline-architecture", projectId],
+    queryFn: () => apiClient.get<AiPipelineArchitecture>(`/ai/pipeline-architect/${projectId}`),
+    enabled: enabled && !!projectId,
+    staleTime: 30_000,
+  });
+}
+
+export function useAiOpsMemory(projectId?: string) {
+  return useQuery({
+    queryKey: ["ai-ops-memory", projectId],
+    queryFn: () => apiClient.get<AiOpsMemory>(projectId ? `/ai/ops-memory?projectId=${projectId}` : "/ai/ops-memory"),
+    staleTime: 30_000,
   });
 }
 
@@ -2360,6 +2577,58 @@ export function useDeployTemplate() {
       environmentName?: string;
     }) => apiClient.post<string>(`/templates/${data.slug}/deploy`, data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["services"] }),
+  });
+}
+
+// ─── Policy Templates ─────────────────────────────────────────────────────────
+
+export interface PolicyTemplateDto {
+  id: string;
+  name: string;
+  description?: string;
+  appliesTo: string;
+  requiredApprovals: number;
+  requiredApproverRole?: string;
+  autoApprovePattern?: string;
+  allowedHoursUtc?: string;
+  isEnabled: boolean;
+  projectId?: string;
+  createdAt: string;
+}
+
+export function usePolicyTemplates(projectId?: string) {
+  return useQuery<PolicyTemplateDto[]>({
+    queryKey: ["policy-templates", projectId],
+    queryFn: () => apiClient.get<PolicyTemplateDto[]>("/policy-templates", {
+      params: projectId ? { projectId } : undefined,
+    }),
+    staleTime: 30_000,
+  });
+}
+
+export function useCreatePolicyTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Omit<PolicyTemplateDto, "id" | "createdAt">) =>
+      apiClient.post<PolicyTemplateDto>("/policy-templates", data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["policy-templates"] }),
+  });
+}
+
+export function useUpdatePolicyTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: Partial<PolicyTemplateDto> & { id: string }) =>
+      apiClient.put<PolicyTemplateDto>(`/policy-templates/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["policy-templates"] }),
+  });
+}
+
+export function useDeletePolicyTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete<void>(`/policy-templates/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["policy-templates"] }),
   });
 }
 

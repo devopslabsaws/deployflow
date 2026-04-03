@@ -246,7 +246,7 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
                     <Github className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
                       id="repoUrl"
-                      placeholder="https://github.com/user/repo"
+                      placeholder="https://github.com/owner/repo"
                       className="pl-9"
                       {...register("repositoryUrl")}
                     />
@@ -266,6 +266,9 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
                     )}
                   </Button>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Formats: <code className="bg-muted px-1 rounded font-mono text-[10px]">https://github.com/owner/repo</code> · <code className="bg-muted px-1 rounded font-mono text-[10px]">https://gitlab.com/owner/repo.git</code>
+                </p>
                 {errors.repositoryUrl && (
                   <p className="text-xs text-destructive">{errors.repositoryUrl.message}</p>
                 )}

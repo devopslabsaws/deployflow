@@ -1,10 +1,11 @@
 "use client";
 
 import {
-  AlertTriangle, ArrowUpRight, CheckCircle2,
-  DollarSign, Rocket, Server, FolderGit2, Zap,
-  Database, Plus, GitBranch, HardDrive, LayoutDashboard,
-  PlayCircle, RefreshCw,
+  AlertTriangle, ArrowUpRight, BellRing, Boxes,
+  Database, GitBranch, GitMerge, LayoutDashboard,
+  MonitorCheck, Plus, RefreshCw, Rocket,
+  Timer, TrendingUp, Wallet, ServerCog,
+  HardDrive, PlayCircle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -121,18 +122,17 @@ export default function DashboardPage() {
         <StatCard
           label="Active Projects"
           value={statsLoading ? null : String(stats?.totalProjects ?? 0)}
-          icon={FolderGit2}
-          iconBg="bg-blue-100 dark:bg-blue-500/15"
-          iconColor="text-blue-500"
-          delta={{ value: 12, direction: "up" }}
+          icon={Boxes}
+          iconBg="bg-blue-500/15"
+          iconColor="text-blue-400"
           href="/projects"
         />
         <StatCard
           label="Deployments Today"
           value={statsLoading ? null : String(deploymentsToday)}
-          icon={Rocket}
-          iconBg="bg-violet-100 dark:bg-violet-500/15"
-          iconColor="text-violet-500"
+          icon={GitMerge}
+          iconBg="bg-violet-500/15"
+          iconColor="text-violet-400"
           successCount={statsLoading ? undefined : successfulToday}
           failedCount={statsLoading ? undefined : failedToday}
           href="/deployments"
@@ -140,29 +140,27 @@ export default function DashboardPage() {
         <StatCard
           label="Online Servers"
           value={statsLoading ? null : `${stats?.onlineServers ?? 0} / ${stats?.totalServers ?? 0}`}
-          icon={Server}
-          iconBg="bg-emerald-100 dark:bg-emerald-500/15"
-          iconColor="text-emerald-500"
-          delta={{ value: 100, direction: "up", suffix: "% uptime" }}
+          icon={MonitorCheck}
+          iconBg="bg-emerald-500/15"
+          iconColor="text-emerald-400"
           href="/servers"
         />
         <StatCard
           label="Monthly Cost"
           value={statsLoading ? null : formatCurrency(stats?.monthlyCost ?? 0)}
-          icon={DollarSign}
-          iconBg="bg-orange-100 dark:bg-orange-500/15"
-          iconColor="text-orange-500"
-          delta={{ value: 5, direction: "down" }}
+          icon={Wallet}
+          iconBg="bg-orange-500/15"
+          iconColor="text-orange-400"
           href="/costs"
         />
       </div>
 
       {/* Secondary stats row */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <MiniStat label="Success Rate"    value={successRate !== null ? `${successRate}%` : "\u2014"} icon={CheckCircle2}  iconCls="text-emerald-500" bgCls="bg-emerald-100 dark:bg-emerald-500/15" loading={statsLoading} />
-        <MiniStat label="Active Alerts"   value={String(stats?.pendingAlerts ?? activeAlerts.length)} icon={AlertTriangle} iconCls="text-amber-500"   bgCls="bg-amber-100 dark:bg-amber-500/15"   loading={statsLoading} />
-        <MiniStat label="Avg Deploy Time" value={avgDeployLabel}                                      icon={Zap}           iconCls="text-sky-500"    bgCls="bg-sky-100 dark:bg-sky-500/15"         loading={statsLoading} />
-        <MiniStat label="Databases"       value={stats ? String(stats.totalDatabases ?? 0) : "\u2014"} icon={Database}   iconCls="text-primary"     bgCls="bg-primary/10"                         loading={statsLoading} />
+        <MiniStat label="Success Rate"    value={successRate !== null ? `${successRate}%` : "\u2014"} icon={TrendingUp}   iconCls="text-emerald-400" bgCls="bg-emerald-500/15" loading={statsLoading} href="/deployments" />
+        <MiniStat label="Active Alerts"   value={String(stats?.pendingAlerts ?? activeAlerts.length)} icon={BellRing}    iconCls="text-amber-400"   bgCls="bg-amber-500/15"   loading={statsLoading} href="/alerts" />
+        <MiniStat label="Avg Deploy Time" value={avgDeployLabel}                                       icon={Timer}       iconCls="text-sky-400"     bgCls="bg-sky-500/15"     loading={statsLoading} href="/insights" />
+        <MiniStat label="Databases"       value={stats ? String(stats.totalDatabases ?? 0) : "\u2014"} icon={Database}   iconCls="text-indigo-400"  bgCls="bg-indigo-500/15"  loading={statsLoading} href="/databases" />
       </div>
 
       {/* Charts row */}
@@ -292,7 +290,7 @@ function StatCard({
 /* Mini Stat */
 
 function MiniStat({
-  label, value, icon: Icon, iconCls, bgCls, loading,
+  label, value, icon: Icon, iconCls, bgCls, loading, href,
 }: {
   label: string;
   value: string;
@@ -300,21 +298,25 @@ function MiniStat({
   iconCls: string;
   bgCls: string;
   loading?: boolean;
+  href: string;
 }) {
   return (
-    <div className="stat-card">
-      <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px]", bgCls)}>
-        <Icon className={cn("h-4 w-4", iconCls)} />
+    <Link href={href} className="block group">
+      <div className="stat-card cursor-pointer transition-all group-hover:border-border/60 group-hover:shadow-md">
+        <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] transition-transform group-hover:scale-105", bgCls)}>
+          <Icon className={cn("h-4 w-4", iconCls)} />
+        </div>
+        <div className="min-w-0 flex-1">
+          {loading ? (
+            <Skeleton className="mb-1 h-5 w-12" />
+          ) : (
+            <p className="text-lg font-bold leading-tight">{value}</p>
+          )}
+          <p className="truncate text-[11px] text-muted-foreground">{label}</p>
+        </div>
+        <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/0 transition-all group-hover:text-muted-foreground/50" />
       </div>
-      <div className="min-w-0">
-        {loading ? (
-          <Skeleton className="mb-1 h-5 w-12" />
-        ) : (
-          <p className="text-lg font-bold leading-tight">{value}</p>
-        )}
-        <p className="truncate text-[11px] text-muted-foreground">{label}</p>
-      </div>
-    </div>
+    </Link>
   );
 }
 

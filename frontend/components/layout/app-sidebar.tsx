@@ -9,7 +9,7 @@ import {
   Boxes, Zap, Package, Network, BookTemplate, GitMerge,
   GitPullRequestArrow, Webhook, Layers, Cpu, Activity,
   FileSearch2, LogsIcon, Compass, TrendingUp, Container,
-  Cloud, Waypoints, AreaChart,
+  Cloud, Waypoints, AreaChart, GitCompare, KeyRound, FlaskConical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -47,6 +47,8 @@ const navGroups: NavGroup[] = [
       { label: "Templates",         href: "/templates",             icon: BookTemplate, badge: "New", badgeColor: "bg-primary text-primary-foreground" },
       { label: "Environments",      href: "/environments",          icon: Layers },
       { label: "Preview Envs",      href: "/preview-environments",  icon: GitPullRequestArrow },
+      { label: "Ephemeral Envs",    href: "/ephemeral-envs",        icon: FlaskConical, badge: "New", badgeColor: "bg-violet-500/20 text-violet-400" },
+      { label: "Blue/Green",        href: "/blue-green",            icon: GitCompare },
       { label: "Outbound Webhooks", href: "/outbound-webhooks",     icon: Webhook },
       { label: "Compose",           href: "/compose",               icon: GitMerge },
     ],
@@ -66,17 +68,20 @@ const navGroups: NavGroup[] = [
   {
     label: "Operations",
     items: [
-      { label: "Pipelines",  href: "/pipelines",  icon: Waypoints },
-      { label: "Logs",       href: "/logs",       icon: ScrollText },
-      { label: "Monitoring", href: "/monitoring", icon: Activity },
-      { label: "Alerts",     href: "/alerts",     icon: BellDot },
+      { label: "Pipelines",     href: "/pipelines",     icon: Waypoints },
+      { label: "Auto-Scaling",   href: "/auto-scaling",   icon: Zap },
+      { label: "Observability",  href: "/observability",  icon: Activity },
+      { label: "Logs",           href: "/logs",           icon: ScrollText },
+      { label: "Monitoring",     href: "/monitoring",     icon: TrendingUp },
+      { label: "Alerts",         href: "/alerts",         icon: BellDot },
     ],
   },
   {
     label: "Management",
     items: [
-      { label: "Team",         href: "/team",       icon: Users },
-      { label: "Security",     href: "/security",   icon: ShieldCheck },
+      { label: "Team",          href: "/team",            icon: Users },
+      { label: "Security",      href: "/security",        icon: ShieldCheck },
+      { label: "Secret Mgmt",   href: "/secret-management", icon: KeyRound },
       { label: "Cost Monitor", href: "/costs",      icon: CircleDollarSign },
       { label: "Audit Logs",   href: "/audit-logs", icon: FileSearch2 },
       { label: "Settings",     href: "/settings",   icon: Settings },

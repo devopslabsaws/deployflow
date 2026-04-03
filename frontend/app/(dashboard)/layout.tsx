@@ -37,14 +37,15 @@ export default function DashboardLayout({
   }, []);
 
   useEffect(() => {
-    if (authHydrated && !isAuthenticated) {
+    if (!authHydrated) return;
+    if (!isAuthenticated) {
       router.replace("/login");
+      return;
     }
-    // Refresh user from server on mount to get latest avatarUrl & profile data
-    if (authHydrated && isAuthenticated) {
-      refreshUser();
-    }
-  }, [authHydrated, isAuthenticated, router]);
+    // Refresh user profile in background — failures are now safely handled in the store
+    refreshUser();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authHydrated, isAuthenticated]);
 
   if (!authHydrated || !isAuthenticated) {
     return (

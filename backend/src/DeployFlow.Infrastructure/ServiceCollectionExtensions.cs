@@ -1,10 +1,12 @@
 using DeployFlow.Application.Common;
+using DeployFlow.Application.Services;
 using DeployFlow.Domain.Entities;
 using DeployFlow.Domain.Interfaces;
 using DeployFlow.Infrastructure.BackgroundServices;
 using DeployFlow.Infrastructure.Identity;
 using DeployFlow.Infrastructure.Persistence;
 using DeployFlow.Infrastructure.Persistence.Repositories;
+using DeployFlow.Infrastructure.Repositories;
 using DeployFlow.Infrastructure.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -82,8 +84,14 @@ public static class ServiceCollectionExtensions
             new TenantRepository<RecoveryRule>(sp.GetRequiredService<ApplicationDbContext>()));
         services.AddScoped<ITenantRepository<PreviewEnvironment>>(sp =>
             new TenantRepository<PreviewEnvironment>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<ProjectDeploymentEnvironment>>(sp =>
+            new TenantRepository<ProjectDeploymentEnvironment>(sp.GetRequiredService<ApplicationDbContext>()));
         services.AddScoped<ITenantRepository<OutboundWebhookConfig>>(sp =>
             new TenantRepository<OutboundWebhookConfig>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<PolicyTemplate>>(sp =>
+            new TenantRepository<PolicyTemplate>(sp.GetRequiredService<ApplicationDbContext>()));
+        services.AddScoped<ITenantRepository<ProjectSlo>>(sp =>
+            new TenantRepository<ProjectSlo>(sp.GetRequiredService<ApplicationDbContext>()));
 
         // Unit of work
         services.AddScoped<IUnitOfWork, UnitOfWork>();
@@ -104,9 +112,21 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPermissionService, PermissionService>();
         services.AddScoped<BlueGreenDeploymentService>();
         services.AddScoped<ClusterService>();
+        services.AddScoped<DeployFlow.Application.Features.Deployments.Commands.IPreflightCheckService, PreflightCheckService>();
         services.AddSingleton<IDatabaseRestoreJobService, DatabaseRestoreJobService>();
         services.AddScoped<IS3DestinationValidationService, S3DestinationValidationService>();
         services.AddHttpClient("notifications");
+
+        // Sprint 12 — DAG execution, Rollback, Deployment Providers
+        services.AddScoped<IPipelineSnapshotRepository, PipelineSnapshotRepository>();
+        services.AddScoped<RollbackManager>();
+        services.AddSingleton<DeploymentProviderRegistry>();
+        services.AddSingleton<IDeploymentProvider, VercelDeploymentProvider>();
+        services.AddSingleton<IDeploymentProvider, NetlifyDeploymentProvider>();
+        services.AddSingleton<IDeploymentProvider, AwsS3DeploymentProvider>();
+        services.AddHttpClient("vercel");
+        services.AddHttpClient("netlify");
+        services.AddHttpClient("rollback");
 
         // ── New SOLID services ────────────────────────────────────────────────
         services.AddSingleton<IDockerfileGeneratorService, DockerfileGeneratorService>();

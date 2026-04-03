@@ -55,6 +55,7 @@ public class Deployment : AggregateRoot
     public Guid? ServerId { get; private set; }
     public Guid? TriggeredBy { get; private set; }
     public string? ImageTag { get; private set; }
+    public string? Version { get; private set; }
     public DateTime? StartedAt { get; private set; }
     public DateTime? FinishedAt { get; private set; }
     public int? DurationSeconds { get; private set; }
@@ -125,6 +126,7 @@ public class Deployment : AggregateRoot
         rollback.IsRollback = true;
         rollback.PreviousDeploymentId = original.Id;
         rollback.ImageTag = original.ImageTag;
+        rollback.Version = original.Version;
         return rollback;
     }
 
@@ -171,6 +173,12 @@ public class Deployment : AggregateRoot
     public void SetImageTag(string imageTag)
     {
         ImageTag = imageTag;
+        Touch();
+    }
+
+    public void SetVersion(string version)
+    {
+        Version = version;
         Touch();
     }
 

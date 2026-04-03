@@ -45,7 +45,10 @@ public interface IUnitOfWork : IDisposable
     ITenantRepository<ProvisioningJob> ProvisioningJobs { get; }
     ITenantRepository<RecoveryRule> RecoveryRules { get; }
     ITenantRepository<PreviewEnvironment> PreviewEnvironments { get; }
+    ITenantRepository<ProjectDeploymentEnvironment> ProjectDeploymentEnvironments { get; }
     ITenantRepository<OutboundWebhookConfig> OutboundWebhooks { get; }
+    ITenantRepository<PolicyTemplate> PolicyTemplates { get; }
+    ITenantRepository<ProjectSlo> ProjectSlos { get; }
 
     Task<int> SaveChangesAsync(CancellationToken ct = default);
     Task BeginTransactionAsync(CancellationToken ct = default);

@@ -327,6 +327,7 @@ export default function PreviewEnvironmentsPage() {
                   value={form.branch}
                   onChange={(e) => setForm((f) => ({ ...f, branch: e.target.value }))}
                 />
+                <p className="text-xs text-muted-foreground">e.g. <code className="bg-muted px-1 rounded font-mono text-[10px]">feature/login</code>, <code className="bg-muted px-1 rounded font-mono text-[10px]">fix/bug-123</code></p>
               </div>
             </div>
             <div className="space-y-2">

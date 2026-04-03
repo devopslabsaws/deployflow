@@ -1238,6 +1238,7 @@ export default function SettingsPage() {
                 <div className="space-y-1.5">
                   <Label className="text-xs">Grafana URL</Label>
                   <Input placeholder="https://grafana.example.com" value={grafanaUrl} onChange={e => setGrafanaUrl(e.target.value)} />
+                  <p className="text-xs text-muted-foreground">Format: <code className="bg-muted px-1 rounded font-mono">https://grafana.your-domain.com</code> or your self-hosted URL.</p>
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">Service Account Token</Label>
@@ -1281,8 +1282,11 @@ export default function SettingsPage() {
           <div className="space-y-3 py-2">
             <div className="space-y-1.5">
               <Label className="text-xs">Webhook URL</Label>
-              <Input placeholder="https://hooks.slack.com/services/..." value={slackWebhook} onChange={e => setSlackWebhook(e.target.value)} />
-              <p className="text-xs text-muted-foreground">Create one at api.slack.com/apps → Incoming Webhooks.</p>
+              <Input placeholder="https://hooks.slack.com/services/T.../B.../..." value={slackWebhook} onChange={e => setSlackWebhook(e.target.value)} />
+              <div className="text-xs text-muted-foreground space-y-1">
+                <p>Format: <code className="bg-muted px-1 rounded font-mono">https://hooks.slack.com/services/TEAM/BOT/TOKEN</code></p>
+                <p>Create one at <strong>api.slack.com/apps</strong> → Incoming Webhooks.</p>
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -1314,11 +1318,12 @@ export default function SettingsPage() {
             <div className="space-y-1.5">
               <Label className="text-xs">Webhook URL</Label>
               <Input
-                placeholder="https://outlook.office.com/webhook/..."
+                placeholder="https://outlook.office.com/webhook/GUID/IncomingWebhook/..."
                 value={teamsWebhook}
                 onChange={e => setTeamsWebhook(e.target.value)}
               />
               <div className="text-xs text-muted-foreground space-y-1">
+                <p>Format: <code className="bg-muted px-1 rounded font-mono text-[10px]">https://outlook.office.com/webhook/...</code></p>
                 <p>To get a webhook URL:</p>
                 <ol className="list-decimal list-inside space-y-0.5">
                   <li>Open the channel in Teams → ⋯ → Connectors</li>
@@ -1361,12 +1366,12 @@ export default function SettingsPage() {
             <div className="space-y-1.5">
               <Label className="text-xs">Personal Access Token</Label>
               <div className="relative">
-                <Input type={showGithubPat ? "text" : "password"} placeholder="ghp_..." value={githubPat} onChange={e => setGithubPat(e.target.value)} className="pr-10" />
+                <Input type={showGithubPat ? "text" : "password"} placeholder="ghp_xxxxxxxxxxxx" value={githubPat} onChange={e => setGithubPat(e.target.value)} className="pr-10" />
                 <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" onClick={() => setShowGithubPat(!showGithubPat)}>
                   {showGithubPat ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
-              <p className="text-xs text-muted-foreground">Create at GitHub → Settings → Developer settings → Personal access tokens. Requires <code className="bg-muted px-1 rounded">repo</code> scope.</p>
+              <p className="text-xs text-muted-foreground">Format: <code className="bg-muted px-1 rounded font-mono">ghp_</code> token. Create at GitHub → Settings → Developer settings → Personal access tokens. Requires <code className="bg-muted px-1 rounded">repo</code> scope.</p>
             </div>
           </div>
           <DialogFooter>

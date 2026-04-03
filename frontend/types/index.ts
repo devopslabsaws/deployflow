@@ -160,7 +160,7 @@ export interface Deployment {
 // ============================================================
 
 export type ServerStatus = "online" | "offline" | "provisioning" | "maintenance" | "error";
-export type ServerProvider = "custom" | "aws" | "azure" | "gcp" | "digitalocean" | "hetzner" | "vultr";
+export type ServerProvider = "local" | "custom" | "aws" | "azure" | "gcp" | "digitalocean" | "hetzner" | "vultr";
 
 export interface Server {
   id: ID;

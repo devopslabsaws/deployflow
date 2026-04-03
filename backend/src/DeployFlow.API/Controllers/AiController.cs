@@ -31,6 +31,33 @@ public class AiController : BaseController
             new AiDeploymentChatCommand(request.Message, request.DeploymentId), ct);
         return ToResponse(result);
     }
+
+    [HttpGet("incident-commander/{deploymentId:guid}")]
+    public async Task<IActionResult> IncidentCommander(Guid deploymentId, CancellationToken ct)
+        => ToResponse(await Mediator.Send(new GetAiIncidentCommanderQuery(deploymentId), ct));
+
+    [HttpPost("risk-assessment")]
+    public async Task<IActionResult> RiskAssessment([FromBody] RiskAssessmentRequest request, CancellationToken ct)
+        => ToResponse(await Mediator.Send(new AssessDeploymentRiskCommand(request.ProjectId, request.Branch, request.EnvironmentSlug), ct));
+
+    [HttpPost("policy-simulation")]
+    public async Task<IActionResult> PolicySimulation([FromBody] PolicySimulationRequest request, CancellationToken ct)
+        => ToResponse(await Mediator.Send(new SimulatePolicyFromPromptCommand(request.Prompt), ct));
+
+    [HttpPost("preview-qa")]
+    public async Task<IActionResult> PreviewQa([FromBody] PreviewQaRequest request, CancellationToken ct)
+        => ToResponse(await Mediator.Send(new GeneratePreviewQaPlanCommand(request.ProjectId, request.Branch, request.PrTitle, request.ChangeSummary), ct));
+
+    [HttpGet("pipeline-architect/{projectId:guid}")]
+    public async Task<IActionResult> PipelineArchitect(Guid projectId, CancellationToken ct)
+        => ToResponse(await Mediator.Send(new GeneratePipelineArchitectureQuery(projectId), ct));
+
+    [HttpGet("ops-memory")]
+    public async Task<IActionResult> OpsMemory([FromQuery] Guid? projectId, CancellationToken ct)
+        => ToResponse(await Mediator.Send(new GetAiOpsMemoryQuery(projectId), ct));
 }
 
 public record ChatRequest(string Message, Guid? DeploymentId);
+public record RiskAssessmentRequest(Guid ProjectId, string? Branch, string? EnvironmentSlug);
+public record PolicySimulationRequest(string Prompt);
+public record PreviewQaRequest(Guid ProjectId, string Branch, string PrTitle, string? ChangeSummary);

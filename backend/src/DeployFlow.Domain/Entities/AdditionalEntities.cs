@@ -53,10 +53,27 @@ public enum VolumeStatus { Active, Inactive, Error }
 
 public class ProjectEnvironment : TenantEntity
 {
+    public Guid? ProjectId { get; set; }
     public string Name { get; set; } = default!;   // "production"
     public string Slug { get; set; } = default!;   // "production"
+    public string? Branch { get; set; }
+    public bool AutoDeployOnPush { get; set; } = true;
+    public bool RequiresApproval { get; set; }
     public bool IsDefault { get; set; }
     public bool IsProduction { get; set; }
+    public int Order { get; set; }
+}
+
+// ─── Project Deployment Environment Mapping ─────────────────────────────────
+
+public class ProjectDeploymentEnvironment : TenantEntity
+{
+    public Guid ProjectId { get; set; }
+    public string EnvironmentName { get; set; } = default!; // Dev, QA, Prod
+    public string Branch { get; set; } = default!;          // dev, staging, main
+    public bool AutoDeploy { get; set; } = true;
+    public bool RequiresApproval { get; set; }
+    public bool IsDefault { get; set; }
     public int Order { get; set; }
 }
 
@@ -215,4 +232,51 @@ public class RestoreJob : TenantEntity
 }
 
 public enum RestoreJobStatus { Pending, Running, Success, Failed, Cancelled }
+
+// ─── Policy Template (Approval governance) ───────────────────────────────────
+
+/// <summary>
+/// Defines deployment approval rules that can be applied to one or more environments.
+/// When a deployment targets a protected environment and a PolicyTemplate applies,
+/// <see cref="Deployment.Approve"/> must be called the required number of times before
+/// the runner processes the deployment.
+/// </summary>
+public class PolicyTemplate : TenantEntity
+{
+    public string Name { get; set; } = default!;
+    public string? Description { get; set; }
+    /// <summary>Comma-separated environment slugs this policy applies to, e.g. "production,staging".</summary>
+    public string AppliesTo { get; set; } = "production";
+    /// <summary>Number of distinct approvals required before the deployment may proceed.</summary>
+    public int RequiredApprovals { get; set; } = 1;
+    /// <summary>If set, only users with this Role may approve.</summary>
+    public string? RequiredApproverRole { get; set; }
+    /// <summary>Auto-approve deployments matching this branch pattern (regex). Null = never auto-approve.</summary>
+    public string? AutoApprovePattern { get; set; }
+    /// <summary>Block deployments outside these hours (UTC). Null = no restriction. Format: "09:00-17:00".</summary>
+    public string? AllowedHoursUtc { get; set; }
+    public bool IsEnabled { get; set; } = true;
+    public Guid? ProjectId { get; set; }   // null = tenant-wide
+}
+
+// ─── SLO (Service Level Objective) ───────────────────────────────────────────
+
+public class ProjectSlo : TenantEntity
+{
+    public Guid ProjectId { get; set; }
+    /// <summary>Target uptime percentage over the rolling 30-day window, e.g. 99.9</summary>
+    public double UptimeTargetPercent { get; set; } = 99.9;
+    /// <summary>Maximum acceptable p95 response latency in milliseconds.</summary>
+    public int P95LatencyMs { get; set; } = 500;
+    /// <summary>Acceptable error rate percentage, e.g. 0.1 = 0.1%</summary>
+    public double ErrorRateBudgetPercent { get; set; } = 0.1;
+    /// <summary>Rolling window in days over which SLO is evaluated.</summary>
+    public int WindowDays { get; set; } = 30;
+    public bool IsEnabled { get; set; } = true;
+    public DateTime? LastEvaluatedAt { get; set; }
+    /// <summary>Most recent calculated uptime percentage.</summary>
+    public double? CurrentUptimePercent { get; set; }
+    /// <summary>Current error budget remaining (% of budget not yet consumed).</summary>
+    public double? ErrorBudgetRemainingPercent { get; set; }
+}
 

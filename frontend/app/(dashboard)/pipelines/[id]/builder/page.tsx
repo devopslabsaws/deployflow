@@ -28,6 +28,7 @@ import {
   ArrowLeft,
   ChevronDown,
   ChevronUp,
+  FileCode,
   GripHorizontal,
   GripVertical,
   Loader2,
@@ -52,7 +53,9 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { usePipeline, useUpdatePipelineStages } from "@/hooks/use-api";
+import { apiClient } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { PipelineStep } from "@/types";
 
@@ -404,6 +407,8 @@ export default function PipelineBuilderPage() {
   const [stages, setStages] = useState<LocalStage[]>([]);
   const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null);
   const [isDirty, setIsDirty] = useState(false);
+  const [yamlContent, setYamlContent] = useState("");
+  const [applyingYaml, setApplyingYaml] = useState(false);
   const initializedRef = useRef(false);
 
   // Populate local state from loaded pipeline (once)
@@ -541,6 +546,22 @@ export default function PipelineBuilderPage() {
       router.push(`/pipelines/${pipelineId}`);
     } catch (e: any) {
       toast.error("Failed to save stages", { description: e.message });
+    }
+  };
+
+  const handleApplyYaml = async () => {
+    if (!yamlContent.trim()) { toast.error("Paste your deployflow.yml content first."); return; }
+    setApplyingYaml(true);
+    try {
+      const result: any = await apiClient.post(`/pipelines/${pipelineId}/apply-yaml`, { yamlContent });
+      toast.success(`YAML applied — ${result.stageCount} stages, ${result.stepCount} steps`);
+      // Reload page to reflect new stages
+      router.refresh();
+      initializedRef.current = false;
+    } catch (e: any) {
+      toast.error("Failed to apply YAML", { description: e.message });
+    } finally {
+      setApplyingYaml(false);
     }
   };
 
@@ -802,6 +823,30 @@ export default function PipelineBuilderPage() {
           </Button>
         </div>
       )}
+
+      {/* YAML Import Section */}
+      <div className="p-4 border-t border-border/50 space-y-2">
+        <div className="flex items-center gap-2 mb-2">
+          <FileCode className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium">Import from deployflow.yml</span>
+          <span className="text-xs text-muted-foreground ml-1">— paste YAML to replace all stages</span>
+        </div>
+        <Textarea
+          placeholder={`version: "1"\nname: my-pipeline\nstages:\n  - name: install\n    steps:\n      - name: npm ci\n        command: npm ci\n  - name: test\n    depends_on: [install]\n    steps:\n      - name: run tests\n        command: npm test`}
+          value={yamlContent}
+          onChange={(e) => setYamlContent(e.target.value)}
+          rows={8}
+          className="font-mono text-xs resize-none"
+        />
+        <Button
+          size="sm" variant="outline" onClick={handleApplyYaml}
+          disabled={applyingYaml || !yamlContent.trim()}
+          className="w-full"
+        >
+          {applyingYaml ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <FileCode className="mr-1.5 h-3.5 w-3.5" />}
+          {applyingYaml ? "Applying…" : "Apply YAML"}
+        </Button>
+      </div>
     </div>
   );
 }

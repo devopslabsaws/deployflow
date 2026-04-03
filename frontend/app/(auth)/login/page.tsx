@@ -17,6 +17,7 @@ import { Separator } from "@/components/ui/separator";
 import { useAuthStore } from "@/store/auth-store";
 import { BACKEND_BASE_URL } from "@/lib/api-client";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -51,7 +52,14 @@ export default function LoginPage() {
   });
 
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { login, isAuthenticated } = useAuthStore();
+
+  // Prefetch the dashboard JS bundle while user fills in the form —
+  // reduces the navigation gap after a successful login.
+  useEffect(() => {
+    router.prefetch("/dashboard");
+  }, [router]);
 
   // Fast-path redirect — fires before Zustand hydration completes
   useEffect(() => {
@@ -89,6 +97,12 @@ export default function LoginPage() {
     try {
       await login(data.email, data.password);
       toast.success("Welcome back!", { description: "Redirecting to dashboard…" });
+      // Kick off a background pre-fetch of dashboard stats so data is ready on arrival.
+      void queryClient.prefetchQuery({
+        queryKey: ["stats", "dashboard"],
+        queryFn: () => import("@/lib/api-client").then(m => m.apiClient.get("/stats/dashboard")),
+        staleTime: 60_000,
+      });
       router.push("/dashboard");
     } catch (error: any) {
       toast.error("Login failed", {

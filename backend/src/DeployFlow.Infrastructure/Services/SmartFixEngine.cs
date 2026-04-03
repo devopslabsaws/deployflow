@@ -303,10 +303,27 @@ internal sealed class DotNetSdkMissingRule : IFixRule
 
     public string GenerateFixScript(string stdErr, string stdOut) =>
         """
-        log "📦 Installing .NET 8 SDK..."
-        curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 8.0
-        export PATH=$PATH:$HOME/.dotnet
-        dotnet --version
+                echo "[fix] Installing .NET 8 SDK (host fallback)..."
+                if command -v dotnet >/dev/null 2>&1; then
+                    echo "[fix] dotnet already available: $(dotnet --version)"
+                else
+                    if command -v apt-get >/dev/null 2>&1; then
+                        sudo apt-get update -qq || true
+                        sudo apt-get install -y dotnet-sdk-8.0 || true
+                    fi
+
+                    if ! command -v dotnet >/dev/null 2>&1; then
+                        curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh || true
+                        bash /tmp/dotnet-install.sh --version 8.0.204 --install-dir "$HOME/.dotnet" || true
+                        export PATH="$PATH:$HOME/.dotnet"
+                    fi
+
+                    if command -v dotnet >/dev/null 2>&1; then
+                        echo "[fix] dotnet installed: $(dotnet --version)"
+                    else
+                        echo "[fix] dotnet is still unavailable after fallback attempts"
+                    fi
+                fi
         """;
 }
 

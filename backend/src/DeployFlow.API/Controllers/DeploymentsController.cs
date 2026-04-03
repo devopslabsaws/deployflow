@@ -6,6 +6,8 @@ using DeployFlow.Domain.Entities;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Text;
+using System.Text.Json;
 
 namespace DeployFlow.API.Controllers;
 
@@ -65,6 +67,35 @@ public class DeploymentsController : BaseController
     public async Task<IActionResult> Cancel(Guid id, CancellationToken ct)
     {
         var result = await Mediator.Send(new CancelDeploymentCommand(id), ct);
+        return ToResponse(result);
+    }
+
+    /// <summary>Re-run a failed or cancelled deployment.</summary>
+    [HttpPost("{id:guid}/rerun")]
+    public async Task<IActionResult> Rerun(Guid id, CancellationToken ct)
+    {
+        var result = await Mediator.Send(new RerunDeploymentCommand(id), ct);
+        if (!result.IsSuccess) return ToResponse(result);
+        return CreatedAtAction(nameof(GetById), new { id = result.Value!.Id }, result.Value);
+    }
+
+    /// <summary>Export a structured incident report JSON for a failed deployment.</summary>
+    [HttpGet("{id:guid}/incident-report")]
+    public async Task<IActionResult> GetIncidentReport(Guid id, CancellationToken ct)
+    {
+        var result = await Mediator.Send(new ExportIncidentReportQuery(id), ct);
+        if (!result.IsSuccess) return ToResponse(result);
+
+        var opts = new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        var json = JsonSerializer.Serialize(result.Value, opts);
+        return File(Encoding.UTF8.GetBytes(json), "application/json", $"incident-{id}.json");
+    }
+
+    /// <summary>Run production-readiness preflight checks for all projects on a server.</summary>
+    [HttpPost("preflight/{projectId:guid}")]
+    public async Task<IActionResult> RunPreflight(Guid projectId, CancellationToken ct)
+    {
+        var result = await Mediator.Send(new PreflightCheckCommand(projectId), ct);
         return ToResponse(result);
     }
 

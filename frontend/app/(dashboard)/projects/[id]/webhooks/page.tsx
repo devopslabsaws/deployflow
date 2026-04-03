@@ -220,10 +220,16 @@ export default function ProjectWebhooksPage() {
               <CopyInput value={config.githubWebhookUrl} label="Webhook URL" />
             )}
             <SecretInput value={ghSecret} label="Secret (optional)" onChange={setGhSecret} />
-            <p className="text-xs text-muted-foreground">
-              Set the webhook content type to <code className="text-xs bg-muted px-1 rounded">application/json</code> and
-              trigger on <code className="text-xs bg-muted px-1 rounded">push</code> events.
-            </p>
+            <div className="rounded-md bg-muted/40 border px-3 py-2.5 space-y-1.5 text-xs text-muted-foreground">
+              <p className="font-medium text-foreground">How to add in GitHub</p>
+              <ol className="list-decimal list-inside space-y-0.5">
+                <li>Go to your repo → <strong>Settings</strong> → <strong>Webhooks</strong> → <strong>Add webhook</strong></li>
+                <li>Paste the URL above into <strong>Payload URL</strong></li>
+                <li>Set <strong>Content type</strong> to <code className="bg-muted px-1 rounded">application/json</code></li>
+                <li>Paste the secret above into <strong>Secret</strong> (optional but recommended)</li>
+                <li>Choose <strong>Just the push event</strong> → <strong>Add webhook</strong></li>
+              </ol>
+            </div>
           </div>
 
           <Separator />
@@ -238,6 +244,15 @@ export default function ProjectWebhooksPage() {
               <CopyInput value={config.gitlabWebhookUrl} label="Webhook URL" />
             )}
             <SecretInput value={glSecret} label="Secret Token (optional)" onChange={setGlSecret} />
+            <div className="rounded-md bg-muted/40 border px-3 py-2.5 space-y-1.5 text-xs text-muted-foreground">
+              <p className="font-medium text-foreground">How to add in GitLab</p>
+              <ol className="list-decimal list-inside space-y-0.5">
+                <li>Go to your project → <strong>Settings</strong> → <strong>Webhooks</strong></li>
+                <li>Paste the URL above into <strong>URL</strong></li>
+                <li>Paste the secret token into <strong>Secret token</strong></li>
+                <li>Check <strong>Push events</strong> → <strong>Add webhook</strong></li>
+              </ol>
+            </div>
           </div>
 
           <Separator />
@@ -254,6 +269,14 @@ export default function ProjectWebhooksPage() {
               <CopyInput value={config.bitbucketWebhookUrl} label="Webhook URL" />
             )}
             <SecretInput value={bbSecret} label="Secret (optional)" onChange={setBbSecret} />
+            <div className="rounded-md bg-muted/40 border px-3 py-2.5 space-y-1.5 text-xs text-muted-foreground">
+              <p className="font-medium text-foreground">How to add in Bitbucket</p>
+              <ol className="list-decimal list-inside space-y-0.5">
+                <li>Go to your repo → <strong>Repository settings</strong> → <strong>Webhooks</strong> → <strong>Add webhook</strong></li>
+                <li>Paste the URL above into <strong>URL</strong></li>
+                <li>Select <strong>Repository Push</strong> trigger → <strong>Save</strong></li>
+              </ol>
+            </div>
           </div>
 
           <Separator />

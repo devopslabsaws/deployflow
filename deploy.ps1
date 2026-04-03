@@ -120,6 +120,10 @@ Write-Host "`n[6/6] Waiting 60 seconds then checking container status..." -Foreg
 Invoke-Ssh "cd $DEST && sleep 60 && docker compose ps"
 Invoke-Ssh "cd $DEST && docker compose ps | grep -E '(unhealthy|Exit|Restarting)' && docker compose logs --tail=40 api 2>&1 | tail -40 || echo 'All containers healthy.'"
 
+# Show frontend logs to catch static-file / startup errors
+Write-Host "`n  Frontend logs (last 30 lines):" -ForegroundColor DarkYellow
+Invoke-Ssh "cd $DEST && docker compose logs --tail=30 frontend 2>&1 || true"
+
 Write-Host ""
 Write-Host "==================================================" -ForegroundColor Green
 Write-Host "  Deployment complete!" -ForegroundColor Green

@@ -2,6 +2,11 @@ using DeployFlow.Application.Common;
 using DeployFlow.Domain.Entities;
 using DeployFlow.Domain.Interfaces;
 using MediatR;
+using System.Text.RegularExpressions;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
 
 namespace DeployFlow.Application.Features.PreviewEnvironments;
 
@@ -102,7 +107,29 @@ public class CreatePreviewEnvironmentCommandHandler
             .ToLowerInvariant()
             .Replace('/', '-')
             .Replace('_', '-');
-        var previewUrl = $"https://pr-{request.PrNumber}-{branchSlug.Take(20)}.preview.yourplatform.dev";
+            // Derive preview URL from server IP when available
+            string previewUrl;
+            if (project.ServerId.HasValue)
+            {
+                var server = await _uow.Servers.GetByIdAsync(project.ServerId.Value, ct);
+                if (server is not null)
+                {
+                    // Assign a deterministic port in range 20000-29999 derived from PR number
+                    var prNum = int.TryParse(request.PrNumber, out var n) ? n : 0;
+                    var port  = 20000 + (prNum % 10000);
+                    previewUrl = $"http://{server.IpAddress}:{port}";
+                }
+                else
+                {
+                    var slug = new string(branchSlug.Take(20).ToArray());
+                    previewUrl = $"https://pr-{request.PrNumber}-{slug}.preview.local";
+                }
+            }
+            else
+            {
+                var slug = new string(branchSlug.Take(20).ToArray());
+                previewUrl = $"https://pr-{request.PrNumber}-{slug}.preview.local";
+            }
 
         var preview = new PreviewEnvironment
         {
@@ -154,6 +181,89 @@ public class UpdatePreviewStatusCommandHandler : IRequestHandler<UpdatePreviewSt
         await _uow.PreviewEnvironments.UpdateAsync(preview, ct);
         await _uow.SaveChangesAsync(ct);
         return Result<bool>.Success(true);
+    }
+}
+
+// ── Post PR/MR comment with preview URL ──────────────────────────────────────
+
+/// <summary>
+/// Posts a comment to a GitHub PR or GitLab MR with the preview environment URL.
+/// </summary>
+/// <param name="RepoOwner">GitHub owner or GitLab namespace (e.g. "acme").</param>
+/// <param name="RepoName">Repository name (e.g. "api").</param>
+/// <param name="PrNumber">Pull/Merge request number.</param>
+/// <param name="PreviewUrl">The live preview URL to advertise.</param>
+/// <param name="ApiToken">Personal access token with repo comment permissions.</param>
+/// <param name="Provider">"github" or "gitlab".</param>
+public record PostPrCommentCommand(
+    string RepoOwner,
+    string RepoName,
+    string PrNumber,
+    string PreviewUrl,
+    string ApiToken,
+    string Provider = "github"
+) : IRequest<Result<bool>>;
+
+public class PostPrCommentCommandHandler : IRequestHandler<PostPrCommentCommand, Result<bool>>
+{
+    private readonly IHttpClientFactory _httpClientFactory;
+
+    public PostPrCommentCommandHandler(IHttpClientFactory httpClientFactory)
+        => _httpClientFactory = httpClientFactory;
+
+    public async Task<Result<bool>> Handle(PostPrCommentCommand request, CancellationToken ct)
+    {
+        try
+        {
+            using var client = _httpClientFactory.CreateClient();
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("DeployFlow/1.0");
+
+            var body = $"""
+                ### 🚀 Preview Environment Ready
+
+                A preview deployment was created for this pull request.
+
+                **URL:** {request.PreviewUrl}
+
+                > Automatically deployed by DeployFlow. Environment will be cleaned up when the PR is closed.
+                """;
+
+            string requestUri;
+            string mediaType = "application/json";
+
+            if (request.Provider.Equals("gitlab", StringComparison.OrdinalIgnoreCase))
+            {
+                // GitLab: POST /projects/:id/merge_requests/:mr_iid/notes
+                var encodedProject = Uri.EscapeDataString($"{request.RepoOwner}/{request.RepoName}");
+                requestUri = $"https://gitlab.com/api/v4/projects/{encodedProject}/merge_requests/{request.PrNumber}/notes";
+                client.DefaultRequestHeaders.Add("PRIVATE-TOKEN", request.ApiToken);
+                var payload = JsonSerializer.Serialize(new { body });
+                using var content = new StringContent(payload, Encoding.UTF8, mediaType);
+                var resp = await client.PostAsync(requestUri, content, ct);
+                return resp.IsSuccessStatusCode
+                    ? Result<bool>.Success(true)
+                    : Result<bool>.Failure($"GitLab API error: {resp.StatusCode}");
+            }
+            else
+            {
+                // GitHub: POST /repos/:owner/:repo/issues/:number/comments
+                requestUri = $"https://api.github.com/repos/{request.RepoOwner}/{request.RepoName}/issues/{request.PrNumber}/comments";
+                client.DefaultRequestHeaders.Authorization =
+                    new AuthenticationHeaderValue("Bearer", request.ApiToken);
+                client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+                client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
+                var payload = JsonSerializer.Serialize(new { body });
+                using var content = new StringContent(payload, Encoding.UTF8, mediaType);
+                var resp = await client.PostAsync(requestUri, content, ct);
+                return resp.IsSuccessStatusCode
+                    ? Result<bool>.Success(true)
+                    : Result<bool>.Failure($"GitHub API error: {resp.StatusCode}");
+            }
+        }
+        catch (Exception ex)
+        {
+            return Result<bool>.Failure($"Failed to post PR comment: {ex.Message}");
+        }
     }
 }
 

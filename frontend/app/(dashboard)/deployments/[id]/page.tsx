@@ -363,6 +363,7 @@ export default function DeploymentDetailPage() {
                   deploymentId={id}
                   initialStatus={deployment?.status}
                   startedAt={deployment?.createdAt}
+                  finishedAt={deployment?.finishedAt}
                 />
               </CardContent>
             </Card>

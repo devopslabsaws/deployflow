@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Terminal, CheckCircle2, XCircle, Loader2, Wifi, WifiOff,
   Clock, Server, ChevronDown, AlertTriangle, Bot, RefreshCw,
-  ServerCrash, GitBranch, Package, Layers, Play, Activity,
+  ServerCrash, GitBranch, Package, Layers, Play, Activity, Copy,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -17,6 +17,7 @@ import { apiClient } from "@/lib/api-client";
 import { useRunnerStatus } from "@/hooks/use-api";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { toast } from "sonner";
 
 // SignalR is loaded lazily so SSR does not break
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -39,6 +40,8 @@ interface DeploymentLiveLogProps {
   initialStatus?: string;
   /** ISO date string — when the deployment was created; used for the elapsed timer */
   startedAt?: string;
+  /** ISO date string — when the deployment finished; freezes the timer */
+  finishedAt?: string;
 }
 
 const PHASES = [
@@ -81,7 +84,7 @@ type StepStatus = "pending" | "active" | "done" | "failed";
 interface StepState { id: string; status: StepStatus; }
 
 const PIPELINE_STEPS: PipelineStep[] = [
-  { id: "ssh",     label: "SSH Connection",  desc: "Testing connectivity to remote server",   estSec: 5,   startPattern: /checking connectivity/i,         donePattern: /server reachable/i,                         failPattern: /server unreachable|offline or unreachable/i },
+  { id: "ssh",     label: "SSH Connection",  desc: "Testing connectivity to remote server",   estSec: 5,   startPattern: /checking connectivity/i,         donePattern: /server reachable/i,                         failPattern: /server unreachable|offline or unreachable|connection timed out|connection refused|no route to host|host is unreachable|ssh.*connect.*failed/i },
   { id: "docker",  label: "Docker Check",    desc: "Verifying Docker on remote server",       estSec: 10,  startPattern: /step 1\/6.*docker check/i,        donePattern: /docker.*installed|step 2/i,                 failPattern: null },
   { id: "source",  label: "Git Clone",       desc: "Fetching source code from repository",    estSec: 30,  startPattern: /step 2\/6.*fetching source/i,     donePattern: /source ready/i,                             failPattern: /clone.*fail|repository.*not found/i },
   { id: "build",   label: "Docker Build",    desc: "Detecting stack \u00b7 building image",   estSec: 120, startPattern: /step 3\/6/i,                      donePattern: /step 4\/6|successfully built/i,             failPattern: /docker build failed|build.*fail/i },
@@ -233,14 +236,16 @@ import { BACKEND_BASE_URL } from "@/lib/api-client";
 const SIGNALR_URL = `${BACKEND_BASE_URL}/hubs/logs`;
 const SERVER_LABEL = BACKEND_BASE_URL.replace(/^https?:\/\//, "");
 
-function ElapsedTimer({ from }: { from: number }) {
-  const [elapsed, setElapsed] = useState(() => Math.floor((Date.now() - from) / 1000));
+function ElapsedTimer({ from, to }: { from: number; to?: number }) {
+  const fixed = to !== undefined ? Math.floor((to - from) / 1000) : undefined;
+  const [elapsed, setElapsed] = useState(() => fixed ?? Math.floor((Date.now() - from) / 1000));
   useEffect(() => {
+    if (fixed !== undefined) { setElapsed(fixed); return; }
     // Initialise immediately so we don't show 0s on remount
     setElapsed(Math.floor((Date.now() - from) / 1000));
     const t = setInterval(() => setElapsed(Math.floor((Date.now() - from) / 1000)), 1000);
     return () => clearInterval(t);
-  }, [from]);
+  }, [from, fixed]);
   const m = Math.floor(elapsed / 60);
   const s = elapsed % 60;
   return <>{m > 0 ? `${m}m ` : ""}{s < 10 ? `0${s}` : s}s</>;
@@ -343,7 +348,7 @@ function WorkflowProgressPanel({ stepStates, isFailed, onStepClick }: {
   );
 }
 
-export function DeploymentLiveLog({ deploymentId, initialStatus, startedAt }: DeploymentLiveLogProps) {
+export function DeploymentLiveLog({ deploymentId, initialStatus, startedAt, finishedAt }: DeploymentLiveLogProps) {
   const token = useAuthStore((s) => s.accessToken);
   const queryClient = useQueryClient();
   const [lines, setLines] = useState<LogLine[]>([]);
@@ -351,6 +356,7 @@ export function DeploymentLiveLog({ deploymentId, initialStatus, startedAt }: De
   const [status, setStatus] = useState(initialStatus ?? "queued");
   const [backendOffline, setBackendOffline] = useState(false);
   const [apiErrorMsg, setApiErrorMsg] = useState<string | null>(null);
+  const [rerunLoading, setRerunLoading] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   // Refs for each pipeline step's first matching log line — used for step-click scrolling
   const stepLineRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -403,10 +409,30 @@ export function DeploymentLiveLog({ deploymentId, initialStatus, startedAt }: De
   const runnerOnline = runnerStatus ? runnerStatus.isRunning : null;
   const runnerLastPollSec = runnerStatus?.secondsSinceLastPoll ?? null;
 
-  // Detect server-offline error from log content
+  // Detect server-offline error from log content — covers SSH/network failure patterns
   const serverOffline = lines.some(
-    (l) => l.stream === "stderr" && l.message.includes("offline or unreachable")
+    (l) =>
+      l.stream === "stderr" &&
+      /offline or unreachable|connection timed out|connection refused|no route to host|host is unreachable|network is unreachable|ssh.*connect.*failed|port 22.*failed|name or service not known/i.test(l.message)
   );
+
+  // Classify the type of SSH failure for a more precise error message
+  const sshErrorLine = lines.find(
+    (l) =>
+      l.stream === "stderr" &&
+      /offline or unreachable|connection timed out|connection refused|no route to host|host is unreachable|network is unreachable|ssh.*connect.*failed|port 22.*failed|name or service not known/i.test(l.message)
+  );
+  const sshErrorDetail = sshErrorLine
+    ? /connection timed out/i.test(sshErrorLine.message)
+      ? "SSH connection timed out"
+      : /connection refused/i.test(sshErrorLine.message)
+      ? "SSH port 22 refused the connection"
+      : /no route to host|host is unreachable|network is unreachable/i.test(sshErrorLine.message)
+      ? "No network route to host"
+      : /name or service not known/i.test(sshErrorLine.message)
+      ? "Hostname could not be resolved"
+      : "SSH connection failed"
+    : null;
 
   // Extract the server IP mentioned in connectivity-check log lines
   const serverIpLine = lines.find((l) => /checking connectivity to/i.test(l.message));
@@ -605,6 +631,103 @@ export function DeploymentLiveLog({ deploymentId, initialStatus, startedAt }: De
   const aiUrl = `/ai-assistant?context=deployment&id=${deploymentId}`;
   const stepStates   = deriveStepStates(lines);
 
+  const fullLogText = useMemo(() => {
+    if (lines.length === 0) return "";
+    return lines
+      .map((line, i) => {
+        const ts = new Date(line.timestamp).toISOString();
+        const stream = line.stream ?? "stdout";
+        return `${i + 1}. [${ts}] [${stream}] ${line.message}`;
+      })
+      .join("\n");
+  }, [lines]);
+
+  const dotnetHostCommandIssue = useMemo(() => {
+    const text = lines.map(l => l.message).join("\n");
+    return /\.net project detected|dotnet: command not found|dotnet_install:|dotnetsdkmissing|custom install command/i.test(text);
+  }, [lines]);
+
+  const recommendedNextSteps = useMemo(() => {
+    return [
+      "Restart or redeploy the DeployFlow backend service so the latest pipeline fixes are active.",
+      "Re-run the same deployment.",
+      "In Project Settings, keep InstallCommand and BuildCommand empty for dockerized .NET apps unless host execution is explicitly required.",
+      "If stack detection is used, apply detection again so sanitized command values are persisted.",
+    ];
+  }, []);
+
+  const copyEntireLog = useCallback(async () => {
+    if (!fullLogText) {
+      toast.info("No logs to copy yet");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(fullLogText);
+      toast.success(`Copied ${lines.length} log lines`);
+    } catch {
+      toast.error("Failed to copy logs");
+    }
+  }, [fullLogText, lines.length]);
+
+  const copyNextSteps = useCallback(async () => {
+    const payload = ["Next Steps:", ...recommendedNextSteps.map((s, i) => `${i + 1}. ${s}`)].join("\n");
+    try {
+      await navigator.clipboard.writeText(payload);
+      toast.success("Next steps copied");
+    } catch {
+      toast.error("Failed to copy next steps");
+    }
+  }, [recommendedNextSteps]);
+
+  const rerunFailedDeployment = useCallback(async () => {
+    try {
+      setRerunLoading(true);
+      const res = await apiClient.post<any>(`/deployments/${deploymentId}/rerun`);
+      const newId = res?.id ?? res?.value?.id;
+
+      toast.success("Re-run started", {
+        description: newId ? `Deployment ${newId} queued.` : "New deployment queued.",
+      });
+
+      if (newId) {
+        window.location.href = `/logs?deploymentId=${newId}`;
+      } else {
+        window.location.href = "/deployments";
+      }
+    } catch (e: any) {
+      toast.error("Failed to re-run deployment", {
+        description: e?.message ?? "Please trigger it manually from Deployments page.",
+      });
+    } finally {
+      setRerunLoading(false);
+    }
+  }, [deploymentId]);
+
+  const downloadIncidentReport = useCallback(async () => {
+    try {
+      const storedToken = useAuthStore.getState().accessToken;
+      const res = await fetch(`${BACKEND_BASE_URL}/api/deployments/${deploymentId}/incident-report`, {
+        headers: { Authorization: `Bearer ${storedToken}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any)?.error ?? `HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `incident-${deploymentId}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("Incident report downloaded");
+    } catch (e: any) {
+      toast.error("Failed to download incident report", { description: e?.message });
+    }
+  }, [deploymentId]);
+
   return (
     <div className="space-y-3">
 
@@ -635,26 +758,44 @@ export function DeploymentLiveLog({ deploymentId, initialStatus, startedAt }: De
 
       {/* ── Deploy server offline banner (from log content) ── */}
       {serverOffline && (
-        <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/8 px-4 py-3.5">
-          <WifiOff className="h-4 w-4 shrink-0 text-destructive mt-0.5" />
-          <div className="flex-1 min-w-0 space-y-2">
-            <div>
-              <p className="text-sm font-semibold text-destructive">Deploy server is offline or unreachable</p>
-              {remoteServerIp && (
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Could not reach <span className="font-mono text-foreground">{remoteServerIp}</span> via SSH.
-                </p>
-              )}
+        <div className="rounded-lg border border-destructive/50 bg-destructive/8 divide-y divide-destructive/20 overflow-hidden">
+          {/* Header */}
+          <div className="flex items-start gap-3 px-4 py-3">
+            <WifiOff className="h-4 w-4 shrink-0 text-destructive mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-destructive">Remote server is unreachable</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {sshErrorDetail && <span className="text-foreground font-medium">{sshErrorDetail}. </span>}
+                {remoteServerIp
+                  ? <>Could not reach <span className="font-mono text-foreground">{remoteServerIp}</span> via SSH.</>  
+                  : "Could not establish an SSH connection to the deploy target."}
+              </p>
             </div>
-            <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
-              <li>Go to your cloud provider (Azure / AWS / GCP) and <strong className="text-foreground">start the VM</strong>.</li>
-              <li>Confirm SSH port 22 is open in the firewall / NSG rules.</li>
-              <li>Return here and click <strong className="text-foreground">Re-deploy</strong> to retry.</li>
+            <Button size="sm" variant="outline" className="gap-1.5 shrink-0 h-7 text-xs border-destructive/30" asChild>
+              <Link href={aiUrl}><Bot className="h-3 w-3" />Ask AI</Link>
+            </Button>
+          </div>
+          {/* Action steps */}
+          <div className="px-4 py-3 space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Resolution steps</p>
+            <ol className="text-xs text-muted-foreground space-y-1.5 list-none">
+              <li className="flex items-start gap-2"><span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-border/60 text-[10px] font-bold mt-0.5">1</span><span>Go to your cloud provider <strong className="text-foreground">(Azure / AWS / GCP)</strong> and start the VM if it is stopped.</span></li>
+              <li className="flex items-start gap-2"><span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-border/60 text-[10px] font-bold mt-0.5">2</span><span>Confirm <strong className="text-foreground">port 22</strong> is open in the firewall / security group / NSG rules.</span></li>
+              <li className="flex items-start gap-2"><span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-border/60 text-[10px] font-bold mt-0.5">3</span><span>Once the server is reachable, use <strong className="text-foreground">Re-deploy</strong> to retry the deployment.</span></li>
             </ol>
           </div>
-          <Button size="sm" variant="outline" className="gap-1.5 shrink-0 h-7 text-xs" asChild>
-            <Link href={aiUrl}><Bot className="h-3 w-3" />Troubleshoot</Link>
-          </Button>
+          {/* Action buttons */}
+          <div className="flex items-center gap-2 px-4 py-2.5 bg-destructive/5">
+            <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs" asChild>
+              <Link href="/servers">View Servers</Link>
+            </Button>
+            <Link
+              href={`/deployments?project=${deploymentId}`}
+              className="ml-auto text-xs text-primary hover:underline"
+            >
+              Re-deploy →
+            </Link>
+          </div>
         </div>
       )}
 
@@ -753,11 +894,18 @@ export function DeploymentLiveLog({ deploymentId, initialStatus, startedAt }: De
           </Badge>
           <Badge variant="outline" className="gap-1 text-xs text-muted-foreground border-border/50">
             <Clock className="h-3 w-3" />
-            <ElapsedTimer from={timerOrigin} />
+            <ElapsedTimer
+              from={timerOrigin}
+              to={isTerminal && finishedAt ? new Date(finishedAt).getTime() : undefined}
+            />
           </Badge>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-muted-foreground">{lines.length} lines</span>
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs gap-1"
+            onClick={copyEntireLog}>
+            <Copy className="h-3 w-3" />Copy Entire Log
+          </Button>
           <Button variant="ghost" size="sm" className="h-6 px-2 text-xs"
             onClick={() => { setLines([]); seenIds.current.clear(); }}>Clear</Button>
           <Button
@@ -913,6 +1061,40 @@ export function DeploymentLiveLog({ deploymentId, initialStatus, startedAt }: De
           <div ref={bottomRef} />
         </div>
       </ScrollArea>
+
+      {(isFailed || dotnetHostCommandIssue) && lines.length > 0 && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-amber-400">Recommended Next Steps</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Use these actions for .NET-on-Linux deployment pipeline failures.
+              </p>
+            </div>
+            <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={copyNextSteps}>
+              <Copy className="h-3 w-3" />Copy Steps
+            </Button>
+          </div>
+          <ol className="space-y-1.5 text-xs text-muted-foreground">
+            {recommendedNextSteps.map((step, idx) => (
+              <li key={idx}>{idx + 1}. {step}</li>
+            ))}
+          </ol>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" className="h-7 text-xs" asChild>
+              <Link href="/projects">Open Project Settings</Link>
+            </Button>
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={rerunFailedDeployment} disabled={rerunLoading}>
+              {rerunLoading ? "Re-running…" : "Re-run Deployment"}
+            </Button>
+            {isFailed && (
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={downloadIncidentReport}>
+                Export Incident
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

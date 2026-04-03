@@ -102,6 +102,7 @@ public class DeploymentConfiguration : IEntityTypeConfiguration<Deployment>
         b.Property(x => x.CommitMessage).HasMaxLength(1000);
         b.Property(x => x.CommitAuthor).HasMaxLength(200);
         b.Property(x => x.Branch).HasMaxLength(200);
+        b.Property(x => x.Version).HasMaxLength(100);
         b.Property(x => x.ImageTag).HasMaxLength(200);
         b.Property(x => x.Url).HasMaxLength(500);
         b.Property(x => x.ErrorMessage).HasMaxLength(2000);
@@ -126,6 +127,21 @@ public class DeploymentConfiguration : IEntityTypeConfiguration<Deployment>
         b.HasIndex(x => new { x.TenantId, x.Status, x.CreatedAt });
         b.HasIndex(x => new { x.TenantId, x.CreatedAt });
         b.HasIndex(x => new { x.ProjectId, x.CreatedAt });
+    }
+}
+
+public class ProjectEnvironmentConfiguration : IEntityTypeConfiguration<ProjectEnvironment>
+{
+    public void Configure(EntityTypeBuilder<ProjectEnvironment> b)
+    {
+        b.ToTable("ProjectEnvironments");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Name).IsRequired();
+        b.Property(x => x.Slug).IsRequired();
+        b.Property(x => x.Branch).HasMaxLength(200);
+        b.HasIndex(x => x.TenantId);
+        b.HasIndex(x => x.ProjectId);
+        b.HasIndex(x => new { x.ProjectId, x.Branch });
     }
 }
 
@@ -561,5 +577,20 @@ public class OutboundWebhookConfigConfiguration : IEntityTypeConfiguration<Outbo
         b.Property(x => x.LastResponseStatus).HasMaxLength(50);
         b.HasIndex(x => x.TenantId);
         b.HasIndex(x => new { x.TenantId, x.IsEnabled });
+    }
+}
+
+public class ProjectDeploymentEnvironmentConfiguration : IEntityTypeConfiguration<ProjectDeploymentEnvironment>
+{
+    public void Configure(EntityTypeBuilder<ProjectDeploymentEnvironment> b)
+    {
+        b.ToTable("project_deployment_environments");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.EnvironmentName).HasMaxLength(100).IsRequired();
+        b.Property(x => x.Branch).HasMaxLength(200).IsRequired();
+        b.HasIndex(x => x.TenantId);
+        b.HasIndex(x => x.ProjectId);
+        b.HasIndex(x => new { x.ProjectId, x.Branch }).IsUnique();
+        b.HasIndex(x => new { x.ProjectId, x.Order });
     }
 }

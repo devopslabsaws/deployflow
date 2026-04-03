@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, GitBranch, Plus, Trash2, Loader2 } from "lucide-react";
+import { ArrowLeft, GitBranch, Plus, Trash2, Loader2, Wand2, Zap } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -13,6 +13,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useProjects, useCreatePipeline } from "@/hooks/use-api";
+import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
 
 export default function NewPipelinePage() {
@@ -29,6 +30,8 @@ export default function NewPipelinePage() {
 
   const createPipeline = useCreatePipeline();
   const saving = createPipeline.isPending;
+  const [scaffolding, setScaffolding] = useState(false);
+  const [simulating, setSimulating] = useState(false);
 
   const handleCreate = async () => {
     if (!name.trim()) { toast.error("Pipeline name is required."); return; }
@@ -38,15 +41,44 @@ export default function NewPipelinePage() {
       return;
     }
     try {
-      await createPipeline.mutateAsync({
+      const created: any = await createPipeline.mutateAsync({
         name: name.trim(),
         description: description.trim() || null,
         projectId,
         trigger,
         cronExpression: trigger === "schedule" ? cronExpression.trim() : null,
       });
-      toast.success(`Pipeline "${name}" created!`);
-      router.push("/pipelines");
+
+      if (!created?.id) {
+        toast.success(`Pipeline "${name}" created!`);
+        router.push("/pipelines");
+        return;
+      }
+
+      const pipeId = created.id;
+
+      // Step 1: Auto-scaffold stages
+      try {
+        setScaffolding(true);
+        await apiClient.post(`/pipelines/${pipeId}/scaffold`, { projectName: name.trim() });
+      } catch {
+        // Non-fatal, continue
+      } finally {
+        setScaffolding(false);
+      }
+
+      // Step 2: Trigger a first test run so users see logs immediately
+      try {
+        setSimulating(true);
+        await apiClient.post(`/pipelines/${pipeId}/runs/simulate`, {});
+        toast.success(`Pipeline "${name}" created — stages generated and first run started!`);
+      } catch {
+        toast.success(`Pipeline "${name}" created with auto-generated stages!`);
+      } finally {
+        setSimulating(false);
+      }
+
+      router.push(`/pipelines/${pipeId}`);
     } catch (e: any) {
       toast.error("Failed to create pipeline", { description: e.message });
     }
@@ -168,12 +200,16 @@ export default function NewPipelinePage() {
 
       {/* Submit */}
       <div className="flex justify-end gap-3">
-        <Button variant="outline" asChild>
+        <Button variant="outline" asChild disabled={saving || scaffolding || simulating}>
           <Link href="/pipelines">Cancel</Link>
         </Button>
-        <Button onClick={handleCreate} disabled={saving}>
+        <Button onClick={handleCreate} disabled={saving || scaffolding || simulating}>
           {saving
             ? <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" />Creating…</>
+            : scaffolding
+            ? <><Wand2 className="w-4 h-4 mr-1.5 animate-pulse" />Generating Stages…</>
+            : simulating
+            ? <><Zap className="w-4 h-4 mr-1.5 animate-pulse" />Running First Build…</>
             : <><Plus className="w-4 h-4 mr-1.5" />Create Pipeline</>
           }
         </Button>

@@ -1,4 +1,5 @@
 using DeployFlow.Application.Common;
+using DeployFlow.Application.Features.Projects.Commands;
 using DeployFlow.Domain.Interfaces;
 using MediatR;
 
@@ -319,12 +320,18 @@ public class ApplyStackDetectionCommandHandler : IRequestHandler<ApplyStackDetec
         if (project is null || project.TenantId != _currentUser.TenantId)
             return Result<bool>.Failure("Project not found.", "404");
 
+        var frameworkValue = request.Framework.ToString().ToLowerInvariant();
+        var (buildCommand, installCommand) = ProjectCommandSanitizer.NormalizeDotnetCommands(
+            frameworkValue,
+            request.BuildCommandOverride,
+            request.InstallCommandOverride);
+
         // Store detection results: framework, build/start/install commands, port
         project.Update(
-            buildCommand: request.BuildCommandOverride,
+            buildCommand: buildCommand,
             startCommand: request.StartCommandOverride,
-            installCommand: request.InstallCommandOverride,
-            framework: request.Framework.ToString().ToLowerInvariant(),
+            installCommand: installCommand,
+            framework: frameworkValue,
             port: request.PortOverride);
 
         await _uow.Projects.UpdateAsync(project, ct);

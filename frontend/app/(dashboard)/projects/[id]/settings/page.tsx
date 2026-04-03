@@ -246,12 +246,15 @@ export default function ProjectSettingsPage() {
               <Input
                 id="repositoryUrl"
                 className="h-8 text-sm font-mono"
-                placeholder="https://github.com/user/repo"
+                placeholder="https://github.com/owner/repo"
                 {...register("repositoryUrl")}
               />
               {errors.repositoryUrl && (
                 <p className="text-xs text-destructive">{errors.repositoryUrl.message}</p>
               )}
+              <p className="text-xs text-muted-foreground">
+                Formats: <code className="bg-muted px-1 rounded font-mono text-[10px]">https://github.com/owner/repo</code> · <code className="bg-muted px-1 rounded font-mono text-[10px]">https://gitlab.com/owner/repo.git</code>
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="branch" className="text-xs">Default Branch</Label>
