@@ -6,7 +6,9 @@ using DeployFlow.Infrastructure.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
+using System.Text.RegularExpressions;
 
 namespace DeployFlow.Infrastructure.BackgroundServices;
 
@@ -21,6 +23,7 @@ public class DeploymentRunnerService : BackgroundService
     private readonly IServiceProvider _services;
     private readonly ILogger<DeploymentRunnerService> _logger;
     private readonly IDeploymentLogBroadcaster _broadcaster;
+    private readonly FeatureFlagsOptions _featureFlags;
     private static readonly ConcurrentDictionary<Guid, bool> _runningDeployments = new();
 
     private static readonly TimeSpan StuckDeploymentTimeout = TimeSpan.FromMinutes(120); // 2-hour watchdog
@@ -42,11 +45,13 @@ public class DeploymentRunnerService : BackgroundService
     public DeploymentRunnerService(
         IServiceProvider services,
         ILogger<DeploymentRunnerService> logger,
-        IDeploymentLogBroadcaster broadcaster)
+        IDeploymentLogBroadcaster broadcaster,
+        IOptions<FeatureFlagsOptions> featureFlags)
     {
         _services = services;
         _logger = logger;
         _broadcaster = broadcaster;
+        _featureFlags = featureFlags.Value;
     }
 
     // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -238,6 +243,7 @@ public class DeploymentRunnerService : BackgroundService
                 if (!success)
                 {
                     await FailDeploymentAsync(deployment, project, "Blue/Green deployment failed.", uow, _broadcaster, notif, ct);
+                    await TryQueueAutoRollbackAsync(uow, deployment, project, ct);
                     return;
                 }
 
@@ -254,6 +260,8 @@ public class DeploymentRunnerService : BackgroundService
 
             await AddLogAsync(db, _broadcaster, deployment.Id,
                 "\ud83d\udd27 Pipeline: clone \u2192 detect stack \u2192 build \u2192 dockerize \u2192 run \u2192 health-check", ct: ct);
+
+            ApplyImmutableDeploymentMetadata(deployment, project);
 
             deployment.SetDeploying();
             await uow.SaveChangesAsync(ct);
@@ -274,6 +282,7 @@ public class DeploymentRunnerService : BackgroundService
                 await FailDeploymentAsync(deployment, project,
                     buildResult.ErrorMessage ?? "Build failed.",
                     uow, _broadcaster, notif, ct);
+                await TryQueueAutoRollbackAsync(uow, deployment, project, ct);
                 return;
             }
 
@@ -400,4 +409,64 @@ public class DeploymentRunnerService : BackgroundService
 
     private static string TrimLog(string? s, int max) =>
         string.IsNullOrEmpty(s) ? "" : s.Length <= max ? s : s[..max] + "\nâ€¦ (truncated)";
+
+    private async Task TryQueueAutoRollbackAsync(IUnitOfWork uow, Deployment failedDeployment, Project project, CancellationToken ct)
+    {
+        if (!_featureFlags.AutoRollbackEnabled || failedDeployment.IsRollback)
+            return;
+
+        var candidates = await uow.Deployments.GetByTenantAsync(project.TenantId, ct);
+        var rollbackTarget = candidates
+            .Where(d => d.ProjectId == project.Id
+                && d.Id != failedDeployment.Id
+                && !d.IsDeleted
+                && (d.Status == DeploymentStatus.Healthy || d.Status == DeploymentStatus.Running)
+                && d.CreatedAt < failedDeployment.CreatedAt)
+            .OrderByDescending(d => d.CreatedAt)
+            .FirstOrDefault();
+
+        if (rollbackTarget is null)
+        {
+            _logger.LogInformation("Auto-rollback skipped for deployment {DeploymentId}: no previous successful deployment.", failedDeployment.Id);
+            return;
+        }
+
+        var rollback = Deployment.CreateRollback(rollbackTarget, failedDeployment.TriggeredBy ?? Guid.Empty);
+        rollback.Metadata["autoRollback"] = "true";
+        rollback.Metadata["autoRollbackFromDeploymentId"] = failedDeployment.Id.ToString();
+        await uow.Deployments.AddAsync(rollback, ct);
+        await uow.SaveChangesAsync(ct);
+
+        await _broadcaster.BroadcastLogAsync(
+            failedDeployment.Id,
+            $"[{DateTime.UtcNow:HH:mm:ss}] Auto rollback queued to deployment {rollbackTarget.Id} (version: {rollbackTarget.Version ?? "n/a"}).",
+            null,
+            ct);
+    }
+
+    private void ApplyImmutableDeploymentMetadata(Deployment deployment, Project project)
+    {
+        if (!_featureFlags.ImmutableDeploymentsOnlyEnabled)
+            return;
+
+        deployment.Metadata["immutableOnly"] = "true";
+        deployment.Metadata["safeRollout"] = _featureFlags.ImmutableSafeRolloutEnabled ? "true" : "false";
+
+        if (string.IsNullOrWhiteSpace(deployment.Version))
+        {
+            var fallbackVersion = $"build-{DateTime.UtcNow:yyyyMMddHHmmss}-{deployment.Id.ToString("N")[..8]}";
+            deployment.SetVersion(fallbackVersion);
+        }
+
+        if (string.IsNullOrWhiteSpace(deployment.ImageTag))
+        {
+            var versionPart = Regex.Replace(
+                deployment.Version!.ToLowerInvariant(),
+                "[^a-z0-9_.-]",
+                "-");
+            deployment.SetImageTag($"deployflow/{project.Slug}:{versionPart}");
+        }
+
+        deployment.Metadata["immutableImageTag"] = deployment.ImageTag!;
+    }
 }

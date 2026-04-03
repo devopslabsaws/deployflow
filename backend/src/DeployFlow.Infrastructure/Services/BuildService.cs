@@ -16,6 +16,8 @@ namespace DeployFlow.Infrastructure.Services;
 /// </summary>
 public class BuildService : IBuildService
 {
+    private const string FixHookMarker = "# __DEPLOYFLOW_FIX_HOOK__";
+
     private readonly ISshService                    _ssh;
     private readonly IDockerfileGeneratorService    _dockerfileGenerator;
     private readonly ISmartFixEngine                _fixEngine;
@@ -46,6 +48,12 @@ public class BuildService : IBuildService
         var (deployment, project, server, sshPrivateKey, envVars) = request;
 
         var envDict = envVars.ToDictionary(e => e.Key, e => e.Value ?? "");
+        var immutableOnly = deployment.Metadata.TryGetValue("immutableOnly", out var immutableValue)
+            && bool.TryParse(immutableValue, out var immutableParsed)
+            && immutableParsed;
+        var imageTag = immutableOnly && !string.IsNullOrWhiteSpace(deployment.ImageTag)
+            ? deployment.ImageTag!
+            : $"deployflow/{project.Slug}:latest";
 
         await logCallback("🚀 Building deploy pipeline script...", null);
 
@@ -75,7 +83,7 @@ public class BuildService : IBuildService
 
         await logCallback($"\u2705 Server reachable ({server.IpAddress}:{server.SshPort}) — building pipeline...", null);
 
-        var script = BuildDeployScript(project, envDict, server.IpAddress);
+        var script = BuildDeployScript(deployment, project, envDict, server.IpAddress);
 
         await logCallback("▶️  Executing deploy pipeline on server...", null);
 
@@ -119,7 +127,7 @@ public class BuildService : IBuildService
                     deployment.Id, attempt, publicUrl);
 
                 stopwatch.Stop();
-                return new BuildResult(true, $"deployflow/{project.Slug}:latest", publicUrl, null, stopwatch.Elapsed);
+                return new BuildResult(true, imageTag, publicUrl, null, stopwatch.Elapsed);
             }
 
             var errSnippet = TrimLog(result.StdErr, 800);
@@ -134,7 +142,7 @@ public class BuildService : IBuildService
                 var fix = _fixEngine.Analyze(result.StdErr, result.StdOut);
                 if (fix.ShouldRetry && fix.FixScript is not null)
                 {
-                    script = fix.FixScript + "\n" + script;
+                    script = InjectFixScript(script, fix.FixScript);
                     await logCallback($"🩹 Auto-fix applied [{fix.RuleName}]: {fix.Diagnosis}", null);
                     _logger.LogInformation("BuildService: auto-fix {Rule} applied for {Id}", fix.RuleName, deployment.Id);
                 }
@@ -154,6 +162,7 @@ public class BuildService : IBuildService
     /// Pipeline: env-vars → ensure-docker → git-clone/update → Dockerfile → docker-build → run → health-check.
     /// </summary>
     private string BuildDeployScript(
+        Deployment                 deployment,
         Project                    project,
         Dictionary<string, string> envVars,
         string                     serverIp)
@@ -161,6 +170,15 @@ public class BuildService : IBuildService
         var sb     = new StringBuilder();
         var slug   = project.Slug;
         var branch = project.RepositoryBranch ?? "main";
+        var immutableOnly = deployment.Metadata.TryGetValue("immutableOnly", out var immutableValue)
+            && bool.TryParse(immutableValue, out var immutableParsed)
+            && immutableParsed;
+        var safeRollout = deployment.Metadata.TryGetValue("safeRollout", out var safeRolloutValue)
+            && bool.TryParse(safeRolloutValue, out var safeRolloutParsed)
+            && safeRolloutParsed;
+        var imageTag = immutableOnly && !string.IsNullOrWhiteSpace(deployment.ImageTag)
+            ? deployment.ImageTag!
+            : $"deployflow/{slug}:latest";
 
         // ── Inject git token into clone URL ───────────────────────────────────
         var gitToken = envVars.GetValueOrDefault("GIT_ACCESS_TOKEN")
@@ -185,12 +203,15 @@ public class BuildService : IBuildService
         sb.AppendLine("(set -o pipefail 2>/dev/null) && set -o pipefail || true");
         sb.AppendLine();
         sb.AppendLine($"CONTAINER_NAME=\"{slug}\"");
-        sb.AppendLine($"IMAGE_TAG=\"deployflow/{slug}:latest\"");
+        sb.AppendLine($"IMAGE_TAG=\"{imageTag}\"");
+        sb.AppendLine($"SAFE_ROLLOUT=\"{(safeRollout ? "true" : "false")}\"");
+        sb.AppendLine("PREVIOUS_CONTAINER=\"\"");
         sb.AppendLine($"APP_DIR=\"$HOME/deployflow/{slug}\"");
         sb.AppendLine(project.Port.HasValue ? $"PORT={project.Port.Value}" : "PORT=3000");
         sb.AppendLine();
         sb.AppendLine("log()  { echo \"[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*\"; }");
         sb.AppendLine("fail() { log \"❌ FATAL: $*\"; exit 1; }");
+        sb.AppendLine(FixHookMarker);
         sb.AppendLine();
 
         // ── Proactive Docker ensure ───────────────────────────────────────────
@@ -269,7 +290,7 @@ public class BuildService : IBuildService
         sb.AppendLine();
 
         // ── Optional custom install / build commands ──────────────────────────
-        if (!string.IsNullOrEmpty(project.InstallCommand) && string.IsNullOrEmpty(project.DockerfilePath))
+        if (ShouldRunHostCustomCommand(project, project.InstallCommand))
         {
             sb.AppendLine("# ── Custom Install ──────────────────────────────────────────────────────");
             sb.AppendLine("log \"📦 Running custom install command...\"");
@@ -277,8 +298,14 @@ public class BuildService : IBuildService
             sb.AppendLine("log \"✅ Install command completed\"");
             sb.AppendLine();
         }
+        else if (!string.IsNullOrWhiteSpace(project.InstallCommand))
+        {
+            sb.AppendLine("# ── Custom Install (Skipped) ────────────────────────────────────────────");
+            sb.AppendLine("log \"⏭️ Skipping host install command for dockerized .NET stack (runs inside Docker build).\"");
+            sb.AppendLine();
+        }
 
-        if (!string.IsNullOrEmpty(project.BuildCommand) && string.IsNullOrEmpty(project.DockerfilePath))
+        if (ShouldRunHostCustomCommand(project, project.BuildCommand))
         {
             sb.AppendLine("# ── Custom Build ────────────────────────────────────────────────────────");
             sb.AppendLine("log \"🔨 Running custom build command...\"");
@@ -286,13 +313,31 @@ public class BuildService : IBuildService
             sb.AppendLine("log \"✅ Build command completed\"");
             sb.AppendLine();
         }
+        else if (!string.IsNullOrWhiteSpace(project.BuildCommand))
+        {
+            sb.AppendLine("# ── Custom Build (Skipped) ──────────────────────────────────────────────");
+            sb.AppendLine("log \"⏭️ Skipping host build command for dockerized .NET stack (runs inside Docker build).\"");
+            sb.AppendLine();
+        }
 
         // ── Rolling replace: stop/remove old container ────────────────────────
         sb.AppendLine("# ── Rolling Replace ─────────────────────────────────────────────────────");
         sb.AppendLine("log \"━━━ Step 4/6: Rolling Replace ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\"");
-        sb.AppendLine("log \"🛑 Stopping previous deployment (if any)...\"");
-        sb.AppendLine("docker stop \"$CONTAINER_NAME\" 2>/dev/null || true");
-        sb.AppendLine("docker rm   \"$CONTAINER_NAME\" 2>/dev/null || true");
+        sb.AppendLine("if [ \"$SAFE_ROLLOUT\" = \"true\" ]; then");
+        sb.AppendLine("  log \"🛡️ Safe rollout enabled — preserving previous container for quick rollback.\"");
+        sb.AppendLine("  if docker ps -a --format '{{.Names}}' | grep -Fxq \"$CONTAINER_NAME\"; then");
+        sb.AppendLine("    PREVIOUS_CONTAINER=\"${CONTAINER_NAME}_prev_$(date +%s)\"");
+        sb.AppendLine("    docker stop \"$CONTAINER_NAME\" 2>/dev/null || true");
+        sb.AppendLine("    docker rename \"$CONTAINER_NAME\" \"$PREVIOUS_CONTAINER\" 2>/dev/null || docker rm \"$CONTAINER_NAME\" 2>/dev/null || true");
+        sb.AppendLine("    log \"📦 Previous container preserved as $PREVIOUS_CONTAINER\"");
+        sb.AppendLine("  else");
+        sb.AppendLine("    log \"ℹ️ No previous container found.\"");
+        sb.AppendLine("  fi");
+        sb.AppendLine("else");
+        sb.AppendLine("  log \"🛑 Stopping previous deployment (if any)...\"");
+        sb.AppendLine("  docker stop \"$CONTAINER_NAME\" 2>/dev/null || true");
+        sb.AppendLine("  docker rm   \"$CONTAINER_NAME\" 2>/dev/null || true");
+        sb.AppendLine("fi");
         sb.AppendLine();
 
         // ── Run new container ─────────────────────────────────────────────────
@@ -329,6 +374,12 @@ public class BuildService : IBuildService
         sb.AppendLine("  elif [ \"$_STATUS\" = exited ] || [ \"$_STATUS\" = dead ]; then");
         sb.AppendLine("    log \"❌ Container crashed immediately. Last 40 log lines:\"");
         sb.AppendLine("    docker logs \"$CONTAINER_NAME\" --tail 40 2>&1 || true");
+        sb.AppendLine("    if [ \"$SAFE_ROLLOUT\" = \"true\" ] && [ -n \"$PREVIOUS_CONTAINER\" ]; then");
+        sb.AppendLine("      log \"↩️ Restoring previous container: $PREVIOUS_CONTAINER\"");
+        sb.AppendLine("      docker rm \"$CONTAINER_NAME\" 2>/dev/null || true");
+        sb.AppendLine("      docker rename \"$PREVIOUS_CONTAINER\" \"$CONTAINER_NAME\" 2>/dev/null || true");
+        sb.AppendLine("      docker start \"$CONTAINER_NAME\" 2>/dev/null || true");
+        sb.AppendLine("    fi");
         sb.AppendLine("    fail \"Container exited immediately after start\"");
         sb.AppendLine("  fi");
         sb.AppendLine("  log \"⏳ Container status: $_STATUS — waiting (attempt $_hc/18)...\"");
@@ -361,6 +412,34 @@ public class BuildService : IBuildService
             if (m.Success) return m.Groups[1].Value;
         }
         return port.HasValue ? $"http://{serverIp}:{port}" : null;
+    }
+
+    private static string InjectFixScript(string script, string fixScript)
+    {
+        var normalizedFix = fixScript.Replace("\r\n", "\n").Replace("\r", "\n").Trim();
+        if (script.Contains(FixHookMarker, StringComparison.Ordinal))
+        {
+            return script.Replace(
+                FixHookMarker,
+                $"{FixHookMarker}\n{normalizedFix}\n",
+                StringComparison.Ordinal);
+        }
+
+        // Fallback for older scripts without marker.
+        return normalizedFix + "\n" + script;
+    }
+
+    private static bool ShouldRunHostCustomCommand(Project project, string? command)
+    {
+        if (string.IsNullOrWhiteSpace(command)) return false;
+        if (!string.IsNullOrEmpty(project.DockerfilePath)) return false;
+
+        var framework = project.Framework ?? string.Empty;
+        var isDotNetProject = framework.Contains("dotnet", StringComparison.OrdinalIgnoreCase)
+            || framework.Contains("asp.net", StringComparison.OrdinalIgnoreCase)
+            || command.Contains("dotnet", StringComparison.OrdinalIgnoreCase);
+
+        return !isDotNetProject;
     }
 
     private static string TrimLog(string? s, int max) =>

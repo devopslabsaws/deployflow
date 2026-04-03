@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import {
   Plus, Search, FolderGit2, GitBranch, Rocket, MoreVertical,
   Trash2, Settings, ExternalLink, CheckCircle2, XCircle,
-  AlertTriangle, Archive, Activity, RefreshCw, Copy, Loader2, Clock,
+  AlertTriangle, Archive, Activity, RefreshCw, Copy, Loader2, Clock, Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +24,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { useProjects, useDeleteProject, useCreateDeployment, useCloneProject } from "@/hooks/use-api";
+import { useProjects, useDeleteProject, useCreateDeployment, useCloneProject, useUpdateProject } from "@/hooks/use-api";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -40,6 +40,8 @@ export default function ProjectsPage() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [cloneTarget, setCloneTarget] = useState<{ id: string; name: string } | null>(null);
   const [cloneName, setCloneName] = useState("");
+  const [renameTarget, setRenameTarget] = useState<Project | null>(null);
+  const [renameName, setRenameName] = useState("");
 
   const { data, isLoading, refetch } = useProjects({
     search: search || undefined,
@@ -49,6 +51,7 @@ export default function ProjectsPage() {
   const deleteProject = useDeleteProject();
   const createDeployment = useCreateDeployment();
   const cloneProject = useCloneProject();
+  const updateProject = useUpdateProject();
 
   const projects = data?.data ?? [];
 
@@ -77,6 +80,27 @@ export default function ProjectsPage() {
       setCloneName("");
     } catch (e: any) {
       toast.error("Clone failed", { description: e.message });
+    }
+  };
+
+  const handleRename = async () => {
+    if (!renameTarget) return;
+    const nextName = renameName.trim();
+    if (!nextName) {
+      toast.error("Project name is required");
+      return;
+    }
+
+    try {
+      await updateProject.mutateAsync({
+        id: renameTarget.id,
+        name: nextName,
+      });
+      toast.success(`Project renamed to "${nextName}".`);
+      setRenameTarget(null);
+      setRenameName("");
+    } catch (e: any) {
+      toast.error("Rename failed", { description: e.message });
     }
   };
 
@@ -198,6 +222,7 @@ export default function ProjectsPage() {
               onDelete={() => setDeleteTarget({ id: project.id, name: project.name })}
               onDeploy={() => handleDeploy(project)}
               onClone={() => { setCloneTarget({ id: project.id, name: project.name }); setCloneName(""); }}
+              onRename={() => { setRenameTarget(project); setRenameName(project.name); }}
             />
           ))}
         </div>
@@ -250,6 +275,39 @@ export default function ProjectsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Rename Dialog */}
+      <Dialog open={!!renameTarget} onOpenChange={open => { if (!open) { setRenameTarget(null); setRenameName(""); } }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-4 w-4" />
+              Rename Project
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              Update the project name for <span className="font-medium text-foreground">{renameTarget?.name}</span>.
+            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="rename-name" className="text-xs">Project Name</Label>
+              <Input
+                id="rename-name"
+                value={renameName}
+                onChange={e => setRenameName(e.target.value)}
+                placeholder="My Project"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameTarget(null)}>Cancel</Button>
+            <Button onClick={handleRename} disabled={updateProject.isPending} className="gap-1.5">
+              {updateProject.isPending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Pencil className="h-3.5 w-3.5" />}
+              Rename
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -285,13 +343,14 @@ function SummaryCard({
 /* ─────────────────────────── Project Card ─────────────────── */
 
 function ProjectCard({
-  project, index, onDelete, onDeploy, onClone,
+  project, index, onDelete, onDeploy, onClone, onRename,
 }: {
   project: Project;
   index: number;
   onDelete: () => void;
   onDeploy: () => void;
   onClone: () => void;
+  onRename: () => void;
 }) {
   const statusColors = {
     active:    "text-emerald-500 border-emerald-500/30 bg-emerald-500/10",
@@ -334,6 +393,9 @@ function ProjectCard({
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={onClone}>
                   <Copy className="mr-2 h-3.5 w-3.5" />Clone Project
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onRename}>
+                  <Pencil className="mr-2 h-3.5 w-3.5" />Rename
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link href={`/projects/${project.id}/settings`}>

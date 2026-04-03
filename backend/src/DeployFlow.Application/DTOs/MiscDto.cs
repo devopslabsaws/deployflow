@@ -111,6 +111,7 @@ public record PipelineDto(
     string Name,
     string Description,
     string Status,
+    bool IsEnabled,
     string Trigger,
     Guid? ProjectId,
     string? ProjectName,
