@@ -3,6 +3,7 @@ using DeployFlow.Domain.Entities;
 using DeployFlow.Domain.Interfaces;
 using DeployFlow.Infrastructure.Persistence;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace DeployFlow.Infrastructure.Services;
 
@@ -27,26 +28,29 @@ public class BlueGreenDeploymentService
     private readonly IUnitOfWork _uow;
     private readonly IDeploymentLogBroadcaster _broadcaster;
     private readonly ILogger<BlueGreenDeploymentService> _logger;
+    private readonly ProxyRoutingOptions _proxyRouting;
 
     public BlueGreenDeploymentService(
         ISshService ssh,
         IEncryptionService enc,
         IUnitOfWork uow,
         IDeploymentLogBroadcaster broadcaster,
-        ILogger<BlueGreenDeploymentService> logger)
+        ILogger<BlueGreenDeploymentService> logger,
+        IOptions<ProxyRoutingOptions> proxyRouting)
     {
         _ssh = ssh;
         _enc = enc;
         _uow = uow;
         _broadcaster = broadcaster;
         _logger = logger;
+        _proxyRouting = proxyRouting.Value;
     }
 
     /// <summary>
     /// Performs a blue/green deploy for the given project/deployment.
     /// Returns true on success, false on failure.
     /// </summary>
-    public async Task<bool> DeployAsync(
+    public async Task<BlueGreenDeploymentResult> DeployAsync(
         Project project,
         Deployment deployment,
         ApplicationDbContext db,
@@ -59,7 +63,7 @@ public class BlueGreenDeploymentService
         if (server is null)
         {
             await Log(db, deployment.Id, "❌ No server assigned — cannot blue/green deploy.", ct: ct);
-            return false;
+            return BlueGreenDeploymentResult.Fail();
         }
 
         var sshKey = server.SshKeyId.HasValue
@@ -69,7 +73,7 @@ public class BlueGreenDeploymentService
         if (sshKey is null)
         {
             await Log(db, deployment.Id, "❌ No SSH key configured on server.", ct: ct);
-            return false;
+            return BlueGreenDeploymentResult.Fail();
         }
 
         var privateKey = _enc.Decrypt(sshKey.PrivateKeyEncrypted);
@@ -81,11 +85,6 @@ public class BlueGreenDeploymentService
         var inactiveContainer = $"{project.Slug}-{inactiveSlot}";
         var activeContainer   = $"{project.Slug}-{activeSlot}";
 
-        // Port mapping: blue uses Port, green uses Port+1 (or any free port)
-        var basePort     = project.Port ?? 3000;
-        var inactivePort = inactiveSlot == "blue" ? basePort : basePort + 1;
-        var activePort   = activeSlot   == "blue" ? basePort : basePort + 1;
-
         await Log(db, deployment.Id, $"🎨 Blue/Green deploy — targeting slot: {inactiveSlot} (container: {inactiveContainer})", ct: ct);
         await _broadcaster.BroadcastStatusAsync(deployment.Id, "deploying", ct);
 
@@ -94,7 +93,7 @@ public class BlueGreenDeploymentService
         var envVars   = await _uow.EnvVariables.GetByProjectAsync(project.Id, ct);
         var envExports= string.Join("\n", envVars.Select(e => $"export {e.Key}=\"{e.Value?.Replace("\"", "\\\"")}\""));
 
-        var buildScript = BuildScript(project, imageTag, inactiveContainer, inactivePort, envExports);
+        var buildScript = BuildScript(project, imageTag, inactiveContainer, envExports);
 
         await Log(db, deployment.Id, "🔨 Building image on inactive slot...", ct: ct);
         var buildResult = await _ssh.ExecuteCommandAsync(
@@ -103,9 +102,12 @@ public class BlueGreenDeploymentService
         if (!buildResult.Success || buildResult.ExitCode != 0)
         {
             await Log(db, deployment.Id, $"❌ Build failed:\n{buildResult.StdErr}", "stderr", ct);
-            return false;
+            return BlueGreenDeploymentResult.Fail();
         }
         await Log(db, deployment.Id, buildResult.StdOut, "stdout", ct);
+
+        var inactivePort = ExtractAssignedHostPort(buildResult.StdOut) ?? project.Port ?? 3000;
+        var publicUrl = ResolveBlueGreenPublicUrl(project, server.IpAddress, inactivePort);
 
         // Step 2 — Health-check inactive slot
         await Log(db, deployment.Id, $"🔍 Health-checking {inactiveContainer} on port {inactivePort}...", ct: ct);
@@ -119,12 +121,12 @@ public class BlueGreenDeploymentService
             // Stop the failed inactive container to clean up
             var cleanup = $"docker stop {inactiveContainer} 2>/dev/null; docker rm {inactiveContainer} 2>/dev/null; true";
             await _ssh.ExecuteCommandAsync(server.IpAddress, server.SshPort, server.SshUser, privateKey, cleanup, ct);
-            return false;
+            return BlueGreenDeploymentResult.Fail();
         }
 
         // Step 3 — Switch routing (update Traefik labels + stop old slot)
         await Log(db, deployment.Id, $"🔀 Switching traffic from {activeSlot} → {inactiveSlot}...", ct: ct);
-        var switchScript = SwitchScript(project, activeContainer, inactiveContainer, activePort, inactivePort);
+        var switchScript = SwitchScript(activeContainer, inactiveContainer, inactivePort);
         var switchResult = await _ssh.ExecuteCommandAsync(
             server.IpAddress, server.SshPort, server.SshUser, privateKey, switchScript, ct);
 
@@ -139,11 +141,11 @@ public class BlueGreenDeploymentService
             blueContainer:  inactiveSlot == "blue"  ? inactiveContainer : activeContainer,
             greenContainer: inactiveSlot == "green" ? inactiveContainer : activeContainer);
 
-        await Log(db, deployment.Id, $"✅ Blue/Green switch complete — {inactiveSlot} is now live.", ct: ct);
-        return true;
+        await Log(db, deployment.Id, $"✅ Blue/Green switch complete — {inactiveSlot} is now live at {publicUrl}.", ct: ct);
+        return BlueGreenDeploymentResult.Ok(publicUrl);
     }
 
-    private static string BuildScript(Project project, string imageTag, string containerName, int port, string envExports)
+    private static string BuildScript(Project project, string imageTag, string containerName, string envExports)
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("#!/bin/bash");
@@ -151,6 +153,39 @@ public class BlueGreenDeploymentService
         sb.AppendLine($"APP_DIR=\"$HOME/deployflow/{project.Slug}\"");
         sb.AppendLine("mkdir -p \"$APP_DIR\" && cd \"$APP_DIR\"");
         sb.AppendLine(envExports);
+        sb.AppendLine(project.Port.HasValue ? $"DEFAULT_INTERNAL_PORT={project.Port.Value}" : "DEFAULT_INTERNAL_PORT=3000");
+        sb.AppendLine("PORT=\"${PORT:-$DEFAULT_INTERNAL_PORT}\"");
+        sb.AppendLine("port_in_use() {");
+        sb.AppendLine("  local candidate=\"$1\"");
+        sb.AppendLine("  if command -v ss >/dev/null 2>&1; then");
+        sb.AppendLine("    ss -ltn \"( sport = :$candidate )\" 2>/dev/null | tail -n +2 | grep -q .");
+        sb.AppendLine("    return $?");
+        sb.AppendLine("  fi");
+        sb.AppendLine("  if command -v netstat >/dev/null 2>&1; then");
+        sb.AppendLine("    netstat -ltn 2>/dev/null | awk '{print $4}' | grep -Eq \"(^|[:.])${candidate}$\"");
+        sb.AppendLine("    return $?");
+        sb.AppendLine("  fi");
+        sb.AppendLine("  return 1");
+        sb.AppendLine("}");
+        sb.AppendLine("allocate_host_port() {");
+        sb.AppendLine("  local preferred=\"${1:-3000}\"");
+        sb.AppendLine("  local range_start=3000");
+        sb.AppendLine("  local range_end=3999");
+        sb.AppendLine("  if [ \"$preferred\" -ge \"$range_start\" ] && [ \"$preferred\" -le \"$range_end\" ] && ! port_in_use \"$preferred\"; then");
+        sb.AppendLine("    echo \"$preferred\"");
+        sb.AppendLine("    return 0");
+        sb.AppendLine("  fi");
+        sb.AppendLine("  local candidate");
+        sb.AppendLine("  for candidate in $(seq \"$range_start\" \"$range_end\"); do");
+        sb.AppendLine("    if ! port_in_use \"$candidate\"; then");
+        sb.AppendLine("      echo \"$candidate\"");
+        sb.AppendLine("      return 0");
+        sb.AppendLine("    fi");
+        sb.AppendLine("  done");
+        sb.AppendLine("  return 1");
+        sb.AppendLine("}");
+        sb.AppendLine("HOST_PORT=\"$(allocate_host_port \"$PORT\")\"");
+        sb.AppendLine("[ -n \"$HOST_PORT\" ] || { echo 'no host port available' >&2; exit 1; }");
 
         if (!string.IsNullOrEmpty(project.RepositoryUrl))
         {
@@ -168,12 +203,14 @@ public class BlueGreenDeploymentService
             sb.AppendLine($"docker stop {containerName} 2>/dev/null || true");
             sb.AppendLine($"docker rm   {containerName} 2>/dev/null || true");
             sb.AppendLine($"docker run -d --name {containerName} --restart unless-stopped " +
-                          $"-p {port}:{project.Port ?? 3000} {imageTag}");
+                          $"-p \"$HOST_PORT:$PORT\" {imageTag}");
+            sb.AppendLine("echo \"DEPLOYFLOW_SLOT_PORT=$HOST_PORT\"");
         }
         else if (!string.IsNullOrEmpty(project.StartCommand))
         {
             sb.AppendLine($"pkill -f \"{containerName}\" 2>/dev/null || true");
             sb.AppendLine($"nohup {project.StartCommand} > /var/log/{containerName}.log 2>&1 &");
+            sb.AppendLine("echo \"DEPLOYFLOW_SLOT_PORT=$HOST_PORT\"");
         }
 
         return sb.ToString();
@@ -188,13 +225,30 @@ public class BlueGreenDeploymentService
                $"done; echo 'timeout'; exit 1";
     }
 
-    private static string SwitchScript(Project project, string oldContainer, string newContainer, int oldPort, int newPort)
+    private static string SwitchScript(string oldContainer, string newContainer, int newPort)
     {
         // Update an nginx/Traefik upstream config or just record the new "live" container.
         // For simple Docker setups: rename containers so the main domain always points to project.Slug
         return $"#!/bin/bash\n" +
                $"docker stop {oldContainer} 2>/dev/null || true\n" +
                $"echo '{newContainer} is now the active container on port {newPort}'\n";
+    }
+
+    private string? ResolveBlueGreenPublicUrl(Project project, string serverIp, int inactivePort)
+    {
+        if (!string.IsNullOrWhiteSpace(project.CustomDomain))
+            return DeploymentPublicUrlResolver.ResolvePublicUrl(project, _proxyRouting, serverIp, inactivePort);
+
+        return $"http://{serverIp}:{inactivePort}";
+    }
+
+    private static int? ExtractAssignedHostPort(string? stdout)
+    {
+        if (string.IsNullOrWhiteSpace(stdout))
+            return null;
+
+        var match = System.Text.RegularExpressions.Regex.Match(stdout, @"DEPLOYFLOW_SLOT_PORT=(\d+)");
+        return match.Success && int.TryParse(match.Groups[1].Value, out var port) ? port : null;
     }
 
     private async Task Log(ApplicationDbContext db, Guid deploymentId, string message, string? stream = null, CancellationToken ct = default)
@@ -214,4 +268,10 @@ public class BlueGreenDeploymentService
         }
         catch { /* log write failures are non-critical */ }
     }
+}
+
+public sealed record BlueGreenDeploymentResult(bool Success, string? PublicUrl)
+{
+    public static BlueGreenDeploymentResult Ok(string? publicUrl) => new(true, publicUrl);
+    public static BlueGreenDeploymentResult Fail() => new(false, null);
 }

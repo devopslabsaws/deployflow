@@ -1,6 +1,7 @@
 using DeployFlow.Application.Common;
 using DeployFlow.Domain.Entities;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -22,6 +23,7 @@ public class BuildService : IBuildService
     private readonly IDockerfileGeneratorService    _dockerfileGenerator;
     private readonly ISmartFixEngine                _fixEngine;
     private readonly ILogger<BuildService>          _logger;
+    private readonly ProxyRoutingOptions            _proxyRouting;
 
     private const int       MaxAttempts = 3;
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(30);
@@ -30,12 +32,14 @@ public class BuildService : IBuildService
         ISshService                 ssh,
         IDockerfileGeneratorService dockerfileGenerator,
         ISmartFixEngine             fixEngine,
-        ILogger<BuildService>       logger)
+        ILogger<BuildService>       logger,
+        IOptions<ProxyRoutingOptions> proxyRouting)
     {
         _ssh                  = ssh;
         _dockerfileGenerator  = dockerfileGenerator;
         _fixEngine            = fixEngine;
         _logger               = logger;
+        _proxyRouting         = proxyRouting.Value;
     }
 
     /// <inheritdoc />
@@ -119,8 +123,8 @@ public class BuildService : IBuildService
             if (result.Success && result.ExitCode == 0)
             {
                 var publicUrl = capturedUrl
-                    ?? ExtractDeploymentUrl(result.StdErr, server.IpAddress, project.Port)
-                    ?? (project.Port.HasValue ? $"http://{server.IpAddress}:{project.Port.Value}" : null);
+                    ?? ExtractDeploymentUrl(result.StdErr)
+                    ?? DeploymentPublicUrlResolver.ResolvePublicUrl(project, _proxyRouting, server.IpAddress, project.Port);
 
                 _logger.LogInformation(
                     "BuildService: deployment {Id} succeeded on attempt {Attempt}. URL={Url}",
@@ -179,6 +183,12 @@ public class BuildService : IBuildService
         var imageTag = immutableOnly && !string.IsNullOrWhiteSpace(deployment.ImageTag)
             ? deployment.ImageTag!
             : $"deployflow/{slug}:latest";
+        var proxyHost = DeploymentPublicUrlResolver.ResolveProxyHost(project, _proxyRouting);
+        var proxyUrl = !string.IsNullOrWhiteSpace(proxyHost)
+            ? $"{(string.Equals(_proxyRouting.Scheme, "http", StringComparison.OrdinalIgnoreCase) ? "http" : "https")}://{proxyHost}"
+            : null;
+        var routerName = DeploymentPublicUrlResolver.GetRouterName(project);
+        var serviceName = DeploymentPublicUrlResolver.GetServiceName(project);
 
         // ── Inject git token into clone URL ───────────────────────────────────
         var gitToken = envVars.GetValueOrDefault("GIT_ACCESS_TOKEN")
@@ -207,10 +217,41 @@ public class BuildService : IBuildService
         sb.AppendLine($"SAFE_ROLLOUT=\"{(safeRollout ? "true" : "false")}\"");
         sb.AppendLine("PREVIOUS_CONTAINER=\"\"");
         sb.AppendLine($"APP_DIR=\"$HOME/deployflow/{slug}\"");
-        sb.AppendLine(project.Port.HasValue ? $"PORT={project.Port.Value}" : "PORT=3000");
+        sb.AppendLine(project.Port.HasValue ? $"DEFAULT_INTERNAL_PORT={project.Port.Value}" : "DEFAULT_INTERNAL_PORT=3000");
+        sb.AppendLine("HOST_PORT=\"\"");
+        sb.AppendLine($"PROXY_HOST=\"{EscapeForBash(proxyHost ?? string.Empty)}\"");
         sb.AppendLine();
         sb.AppendLine("log()  { echo \"[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*\"; }");
         sb.AppendLine("fail() { log \"❌ FATAL: $*\"; exit 1; }");
+        sb.AppendLine("port_in_use() {");
+        sb.AppendLine("  local candidate=\"$1\"");
+        sb.AppendLine("  if command -v ss >/dev/null 2>&1; then");
+        sb.AppendLine("    ss -ltn \"( sport = :$candidate )\" 2>/dev/null | tail -n +2 | grep -q .");
+        sb.AppendLine("    return $?");
+        sb.AppendLine("  fi");
+        sb.AppendLine("  if command -v netstat >/dev/null 2>&1; then");
+        sb.AppendLine("    netstat -ltn 2>/dev/null | awk '{print $4}' | grep -Eq \"(^|[:.])${candidate}$\"");
+        sb.AppendLine("    return $?");
+        sb.AppendLine("  fi");
+        sb.AppendLine("  return 1");
+        sb.AppendLine("}");
+        sb.AppendLine("allocate_host_port() {");
+        sb.AppendLine("  local preferred=\"${1:-3000}\"");
+        sb.AppendLine("  local range_start=3000");
+        sb.AppendLine("  local range_end=3999");
+        sb.AppendLine("  if [ \"$preferred\" -ge \"$range_start\" ] && [ \"$preferred\" -le \"$range_end\" ] && ! port_in_use \"$preferred\"; then");
+        sb.AppendLine("    echo \"$preferred\"");
+        sb.AppendLine("    return 0");
+        sb.AppendLine("  fi");
+        sb.AppendLine("  local candidate");
+        sb.AppendLine("  for candidate in $(seq \"$range_start\" \"$range_end\"); do");
+        sb.AppendLine("    if ! port_in_use \"$candidate\"; then");
+        sb.AppendLine("      echo \"$candidate\"");
+        sb.AppendLine("      return 0");
+        sb.AppendLine("    fi");
+        sb.AppendLine("  done");
+        sb.AppendLine("  return 1");
+        sb.AppendLine("}");
         sb.AppendLine(FixHookMarker);
         sb.AppendLine();
 
@@ -248,6 +289,9 @@ public class BuildService : IBuildService
                 .Replace("`", "\\`");
             sb.AppendLine($"export {key}=\"{safe}\"");
         }
+        sb.AppendLine("PORT=\"${PORT:-$DEFAULT_INTERNAL_PORT}\"");
+        sb.AppendLine("HOST_PORT=\"$(allocate_host_port \"$PORT\")\" || fail \"No free host port available in range 3000-3999\"");
+        sb.AppendLine("log \"🧭 Internal app port: $PORT | selected external host port: $HOST_PORT\"");
         sb.AppendLine();
 
         // ── Git clone / update ────────────────────────────────────────────────
@@ -342,11 +386,36 @@ public class BuildService : IBuildService
 
         // ── Run new container ─────────────────────────────────────────────────
         sb.AppendLine("log \"━━━ Step 5/6: Starting Container ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\"");
-        sb.AppendLine("log \"▶️  Starting container '$CONTAINER_NAME' on port $PORT...\"");
+        sb.AppendLine("log \"▶️  Starting container '$CONTAINER_NAME' with host port $HOST_PORT -> container port $PORT...\"");
+        sb.AppendLine("start_container() {");
         sb.Append("docker run -d");
         sb.Append(" \\\n  --name \"$CONTAINER_NAME\"");
         sb.Append(" \\\n  --restart unless-stopped");
-        sb.Append(" \\\n  -p \"$PORT:$PORT\"");
+        sb.Append(" \\\n  -p \"$HOST_PORT:$PORT\"");
+
+        if (!string.IsNullOrWhiteSpace(proxyHost))
+        {
+            if (!string.IsNullOrWhiteSpace(_proxyRouting.DockerNetwork))
+                sb.Append($" \\\n+  --network \"{EscapeForBash(_proxyRouting.DockerNetwork)}\"");
+
+            sb.Append(" \\\n+  --label \"traefik.enable=true\"");
+            sb.Append($" \\\n+  --label \"traefik.http.routers.{routerName}.rule=Host(`{proxyHost}`)\"");
+            sb.Append($" \\\n+  --label \"traefik.http.routers.{routerName}.service={serviceName}\"");
+            sb.Append(" \\\n+  --label \"traefik.http.services." + serviceName + ".loadbalancer.server.port=$PORT\"");
+
+            if (!string.IsNullOrWhiteSpace(_proxyRouting.EntryPoints))
+                sb.Append($" \\\n+  --label \"traefik.http.routers.{routerName}.entrypoints={EscapeForBash(_proxyRouting.EntryPoints)}\"");
+
+            if (_proxyRouting.TlsEnabled)
+            {
+                sb.Append($" \\\n+  --label \"traefik.http.routers.{routerName}.tls=true\"");
+                if (!string.IsNullOrWhiteSpace(_proxyRouting.CertResolver))
+                    sb.Append($" \\\n+  --label \"traefik.http.routers.{routerName}.tls.certresolver={EscapeForBash(_proxyRouting.CertResolver)}\"");
+            }
+
+            if (!string.IsNullOrWhiteSpace(_proxyRouting.DockerNetwork))
+                sb.Append($" \\\n+  --label \"traefik.docker.network={EscapeForBash(_proxyRouting.DockerNetwork)}\"");
+        }
 
         foreach (var (key, value) in envVars)
         {
@@ -359,7 +428,26 @@ public class BuildService : IBuildService
             sb.Append($" \\\n  -e \"{key}={safe}\"");
         }
 
-        sb.AppendLine(" \\\n  \"$IMAGE_TAG\" || fail \"Failed to start container\"");
+        sb.AppendLine(" \\\n  \"$IMAGE_TAG\"");
+        sb.AppendLine("}");
+        sb.AppendLine("for _run_try in 1 2 3; do");
+        sb.AppendLine("  set +e");
+        sb.AppendLine("  _run_output=$(start_container 2>&1)");
+        sb.AppendLine("  _run_exit=$?");
+        sb.AppendLine("  set -e");
+        sb.AppendLine("  if [ \"$_run_exit\" -eq 0 ]; then");
+        sb.AppendLine("    log \"✅ Container started on external port $HOST_PORT\"");
+        sb.AppendLine("    break");
+        sb.AppendLine("  fi");
+        sb.AppendLine("  echo \"$_run_output\" >&2");
+        sb.AppendLine("  if echo \"$_run_output\" | grep -Eiq \"port is already allocated|address already in use\"; then");
+        sb.AppendLine("    log \"⚠️ Host port $HOST_PORT became busy during deploy attempt $_run_try/3 — selecting another port...\"");
+        sb.AppendLine("    HOST_PORT=\"$(allocate_host_port \"$((HOST_PORT + 1))\")\" || fail \"No alternate host port available in range 3000-3999\"");
+        sb.AppendLine("    continue");
+        sb.AppendLine("  fi");
+        sb.AppendLine("  fail \"Failed to start container\"");
+        sb.AppendLine("done");
+        sb.AppendLine("[ \"$_run_exit\" -eq 0 ] || fail \"Failed to start container after 3 attempts\"");
         sb.AppendLine();
 
         // ── Health check ──────────────────────────────────────────────────────
@@ -369,7 +457,7 @@ public class BuildService : IBuildService
         sb.AppendLine("for _hc in $(seq 1 18); do");
         sb.AppendLine("  _STATUS=$(docker inspect --format='{{.State.Status}}' \"$CONTAINER_NAME\" 2>/dev/null || echo missing)");
         sb.AppendLine("  if [ \"$_STATUS\" = running ]; then");
-        sb.AppendLine("    log \"✅ Container is running — image: $IMAGE_TAG, port: $PORT\"");
+        sb.AppendLine("    log \"✅ Container is running — image: $IMAGE_TAG, internal port: $PORT, external port: $HOST_PORT\"");
         sb.AppendLine("    break");
         sb.AppendLine("  elif [ \"$_STATUS\" = exited ] || [ \"$_STATUS\" = dead ]; then");
         sb.AppendLine("    log \"❌ Container crashed immediately. Last 40 log lines:\"");
@@ -393,9 +481,18 @@ public class BuildService : IBuildService
 
         // ── Emit URL for the runner to capture ────────────────────────────────
         sb.AppendLine("log \"🌐 Deployment complete!\"");
-        sb.AppendLine($"DEPLOY_URL=\"http://{serverIp}:$PORT\"");
-        sb.AppendLine($"log \"🔗 App URL: http://{serverIp}:$PORT\"");
-        sb.AppendLine($"echo \"DEPLOYFLOW_URL=http://{serverIp}:$PORT\"");
+        if (!string.IsNullOrWhiteSpace(proxyUrl))
+        {
+            sb.AppendLine($"DEPLOY_URL=\"{proxyUrl}\"");
+            sb.AppendLine($"log \"🔗 App URL: {proxyUrl}\"");
+            sb.AppendLine($"echo \"DEPLOYFLOW_URL={proxyUrl}\"");
+        }
+        else
+        {
+            sb.AppendLine($"DEPLOY_URL=\"http://{serverIp}:$HOST_PORT\"");
+            sb.AppendLine($"log \"🔗 App URL: http://{serverIp}:$HOST_PORT\"");
+            sb.AppendLine($"echo \"DEPLOYFLOW_URL=http://{serverIp}:$HOST_PORT\"");
+        }
 
         // Normalize Windows CRLF → LF so bash on Linux does not see \r as part
         // of each command/option (causes "set: invalid option" and "$'\r': command not found").
@@ -404,15 +501,22 @@ public class BuildService : IBuildService
 
     // ── Utilities ─────────────────────────────────────────────────────────────
 
-    private static string? ExtractDeploymentUrl(string? stdout, string serverIp, int? port)
+    private static string? ExtractDeploymentUrl(string? stdout)
     {
         if (!string.IsNullOrEmpty(stdout))
         {
             var m = Regex.Match(stdout, @"DEPLOYFLOW_URL=(https?://\S+)");
             if (m.Success) return m.Groups[1].Value;
         }
-        return port.HasValue ? $"http://{serverIp}:{port}" : null;
+        return null;
     }
+
+    private static string EscapeForBash(string value)
+        => value
+            .Replace("\\", "\\\\")
+            .Replace("\"", "\\\"")
+            .Replace("$", "\\$")
+            .Replace("`", "\\`");
 
     private static string InjectFixScript(string script, string fixScript)
     {

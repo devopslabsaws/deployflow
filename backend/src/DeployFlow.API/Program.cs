@@ -29,6 +29,7 @@ builder.Host.UseSerilog();
 builder.Services.AddApplicationLayer();
 builder.Services.AddInfrastructureLayer(builder.Configuration);
 builder.Services.Configure<FeatureFlagsOptions>(builder.Configuration.GetSection("FeatureFlags"));
+builder.Services.Configure<ProxyRoutingOptions>(builder.Configuration.GetSection("Proxy"));
 // NOTE: Identity (UserManager, RoleManager, stores, password options) is fully
 // registered inside AddInfrastructureLayer — do NOT call AddIdentityCore again.
 

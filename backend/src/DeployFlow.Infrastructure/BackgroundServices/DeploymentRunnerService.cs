@@ -239,15 +239,16 @@ public class DeploymentRunnerService : BackgroundService
                 await uow.SaveChangesAsync(ct);
                 await _broadcaster.BroadcastStatusAsync(deploymentId, "deploying", ct);
 
-                var success = await blueGreen.DeployAsync(project, deployment, db, ct);
-                if (!success)
+                var blueGreenResult = await blueGreen.DeployAsync(project, deployment, db, ct);
+                if (!blueGreenResult.Success)
                 {
                     await FailDeploymentAsync(deployment, project, "Blue/Green deployment failed.", uow, _broadcaster, notif, ct);
                     await TryQueueAutoRollbackAsync(uow, deployment, project, ct);
                     return;
                 }
 
-                var bgUrl = project.CustomDomain is not null ? $"https://{project.CustomDomain}" : null;
+                var bgUrl = blueGreenResult.PublicUrl
+                    ?? (project.CustomDomain is not null ? $"https://{project.CustomDomain}" : null);
                 deployment.MarkSucceeded(bgUrl);
                 project.RecordDeployment(deployment.Id, DeploymentStatus.Healthy);
                 await uow.SaveChangesAsync(ct);
