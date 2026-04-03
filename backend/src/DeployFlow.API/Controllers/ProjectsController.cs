@@ -45,7 +45,7 @@ public class ProjectsController : BaseController
             request.Name, request.Description, request.RepositoryUrl, request.Branch,
             request.BuildCommand, request.StartCommand, request.InstallCommand,
             request.DockerfilePath, request.Framework, request.CustomDomain,
-            request.AutoDeploy, request.Tags, request.AssignedServerId), ct);
+            request.Port, request.AutoDeploy, request.Tags, request.AssignedServerId), ct);
 
         if (!result.IsSuccess) return ToResponse(result);
         return CreatedAtAction(nameof(GetById), new { id = result.Value!.Id }, result.Value);
@@ -58,7 +58,7 @@ public class ProjectsController : BaseController
         var result = await Mediator.Send(new UpdateProjectCommand(
             id, request.Name, request.Description, request.RepositoryUrl, request.Branch,
             request.BuildCommand, request.StartCommand, request.InstallCommand,
-            request.DockerfilePath, null, request.CustomDomain, request.AutoDeploy,
+            request.DockerfilePath, null, request.CustomDomain, request.Port, request.AutoDeploy,
             request.Tags, request.AssignedServerId), ct);
         return ToResponse(result);
     }

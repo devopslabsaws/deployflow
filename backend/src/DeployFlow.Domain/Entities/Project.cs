@@ -59,6 +59,7 @@ public class Project : AggregateRoot
         string? dockerfilePath = null,
         string? framework = null,
         string? customDomain = null,
+        int? port = null,
         bool autoDeployEnabled = true,
         string[]? tags = null,
         Guid? createdBy = null)
@@ -79,6 +80,7 @@ public class Project : AggregateRoot
             DockerfilePath = dockerfilePath,
             Framework = framework,
             CustomDomain = customDomain,
+            Port = port,
             AutoDeployEnabled = autoDeployEnabled,
             Tags = tags?.ToList() ?? new List<string>(),
             CreatedBy = createdBy

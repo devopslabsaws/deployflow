@@ -14,7 +14,7 @@ public class MappingProfile : Profile
                 s.Id, s.Name, s.Slug, s.Description ?? "",
                 s.Status.ToString(), s.RepositoryUrl, s.RepositoryBranch,
                 s.BuildCommand ?? "", s.StartCommand ?? "", s.InstallCommand,
-                s.DockerfilePath, s.Framework ?? "", s.CustomDomain,
+                s.DockerfilePath, s.Framework ?? "", s.CustomDomain, s.Port,
                 s.AutoDeployEnabled,
                 s.LastDeploymentId.HasValue ? s.LastDeploymentId.ToString() : null,
                 s.LastDeploymentStatus != null ? s.LastDeploymentStatus.ToString() : null,

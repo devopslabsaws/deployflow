@@ -223,6 +223,7 @@ function normalizeProject(dto: any): Project {
       installCommand: dto.installCommand,
       startCommand: dto.startCommand,
       dockerfilePath: dto.dockerfilePath,
+      port: dto.port ?? dto.settings?.port,
       autoDeployEnabled: dto.autoDeploy ?? dto.settings?.autoDeployEnabled ?? false,
       branchDeployEnabled: dto.settings?.branchDeployEnabled ?? false,
       previewDeployEnabled: dto.settings?.previewDeployEnabled ?? false,

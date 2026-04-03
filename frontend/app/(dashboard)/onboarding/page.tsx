@@ -143,6 +143,7 @@ export default function OnboardingPage() {
   const branchFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [repoUrlError, setRepoUrlError] = useState("");
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
+  const [deployPort, setDeployPort] = useState(3000);
   const [fetching, setFetching] = useState(false);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
   const [deploymentData, setDeploymentData] = useState<Deployment | null>(null);
@@ -158,6 +159,31 @@ export default function OnboardingPage() {
   const queryClient = useQueryClient();
   const { data: projects } = useProjects();
   const { data: servers } = useServers();
+
+  function resolveDeployPort() {
+    const envPort = Number(envVars.PORT);
+    if (Number.isInteger(envPort) && envPort >= 1 && envPort <= 65535) {
+      return envPort;
+    }
+
+    const directPort = Number(deployPort);
+    if (Number.isInteger(directPort) && directPort >= 1 && directPort <= 65535) {
+      return directPort;
+    }
+
+    return 3000;
+  }
+
+  function setResolvedDeployPort(port: number) {
+    setDeployPort(port);
+    setEnvVars((prev) => {
+      if (!("PORT" in prev) || prev.PORT === String(port)) {
+        return { ...prev, PORT: String(port) };
+      }
+
+      return { ...prev, PORT: String(port) };
+    });
+  }
 
   // Auto-fetch branches when a valid GitHub/GitLab URL is entered (debounced)
   useEffect(() => {
@@ -197,6 +223,10 @@ export default function OnboardingPage() {
     if (match) {
       setAutoDetectedProjectId(match.id);
       setSelectedProjectId(match.id);
+      const existingPort = match.settings?.port;
+      if (typeof existingPort === "number" && existingPort >= 1 && existingPort <= 65535) {
+        setResolvedDeployPort(existingPort);
+      }
     } else {
       setAutoDetectedProjectId(null);
     }
@@ -266,11 +296,15 @@ export default function OnboardingPage() {
       {
         onSuccess: (stack) => {
           setDetectedStack(stack);
+          const resolvedPort = resolveDeployPort();
           // Pre-populate suggested env vars
           const initial: Record<string, string> = {};
           (stack.suggestedEnvVars ?? []).forEach((k) => {
-            initial[k] = "";
+            initial[k] = k === "PORT" ? String(resolvedPort) : envVars[k] ?? "";
           });
+          if (stack.suggestedEnvVars?.includes("PORT")) {
+            setDeployPort(resolvedPort);
+          }
           setEnvVars(initial);
           goToStep(3);
           toast.success(`Detected: ${stack.framework}`);
@@ -282,6 +316,12 @@ export default function OnboardingPage() {
 
   async function handleApplyWithCreate() {
     if (!detectedStack) return;
+    const resolvedPort = resolveDeployPort();
+    if (!Number.isInteger(resolvedPort) || resolvedPort < 1 || resolvedPort > 65535) {
+      toast.error("App port must be an integer between 1 and 65535.");
+      return;
+    }
+
     let projectId = selectedProjectId;
     setIsAutoCreating(true);
     try {
@@ -300,6 +340,7 @@ export default function OnboardingPage() {
           dockerfilePath: null,
           framework: detectedStack.framework,
           customDomain: null,
+          port: resolvedPort,
           autoDeploy: true,
           tags: [],
           assignedServerId: selectedServerId || null,
@@ -314,7 +355,26 @@ export default function OnboardingPage() {
       if (selectedServerId || branch) {
         await apiClient.put(`/projects/${projectId}`, {
           branch,
+          port: resolvedPort,
           assignedServerId: selectedServerId || null,
+        });
+      }
+
+      if (envVars.PORT !== String(resolvedPort)) {
+        setEnvVars((prev) => ({ ...prev, PORT: String(resolvedPort) }));
+      }
+
+      const envVarEntries = Object.entries({ ...envVars, PORT: String(resolvedPort) })
+        .map(([key, value]) => [key.trim(), value] as const)
+        .filter(([key, value]) => key && value.trim() !== "");
+
+      for (const [key, value] of envVarEntries) {
+        await apiClient.put("/env-variables", {
+          key,
+          value,
+          isSecret: false,
+          environment: "production",
+          projectId,
         });
       }
 
@@ -341,7 +401,10 @@ export default function OnboardingPage() {
       }
 
       // Apply detected stack settings to the project
-      await apiClient.post(`/stack-detection/apply/${projectId}`, { framework: detectedStack.framework });
+      await apiClient.post(`/stack-detection/apply/${projectId}`, {
+        framework: detectedStack.framework,
+        portOverride: resolvedPort,
+      });
 
       // Auto-create and scaffold a smart default pipeline based on detected stack
       const pipeline = await apiClient.post<any>("/pipelines", {
@@ -750,9 +813,16 @@ export default function OnboardingPage() {
                         <Input
                           placeholder="value"
                           value={envVars[key] ?? ""}
-                          onChange={(e) =>
-                            setEnvVars((prev) => ({ ...prev, [key]: e.target.value }))
-                          }
+                          onChange={(e) => {
+                            const nextValue = e.target.value;
+                            setEnvVars((prev) => ({ ...prev, [key]: nextValue }));
+                            if (key === "PORT") {
+                              const parsed = Number(nextValue);
+                              if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 65535) {
+                                setDeployPort(parsed);
+                              }
+                            }
+                          }}
                         />
                       </div>
                     ))}
@@ -851,6 +921,26 @@ export default function OnboardingPage() {
                     onClear={() => setSelectedServerId("")}
                   />
                 </div>
+
+                <div className="space-y-2">
+                  <Label>App Port</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={deployPort}
+                    onChange={(e) => {
+                      const parsed = Number(e.target.value) || 0;
+                      setDeployPort(parsed);
+                      setEnvVars((prev) => ({ ...prev, PORT: parsed > 0 ? String(parsed) : "" }));
+                    }}
+                    placeholder="3000"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    This port is persisted on the project and used for current and future deployments.
+                  </p>
+                </div>
+
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={() => setCurrentStep(3)}>
                     <ChevronLeft className="mr-2 w-4 h-4" /> Back

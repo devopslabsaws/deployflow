@@ -22,6 +22,7 @@ public record CreateProjectCommand(
     string? DockerfilePath,
     string? Framework,
     string? CustomDomain,
+    int? Port,
     bool AutoDeploy,
     string[] Tags,
     Guid? AssignedServerId
@@ -41,6 +42,9 @@ public class CreateProjectCommandValidator : AbstractValidator<CreateProjectComm
             .Must(d => string.IsNullOrEmpty(d) ||
                 System.Text.RegularExpressions.Regex.IsMatch(d, @"^[a-zA-Z0-9][a-zA-Z0-9\-\.]+[a-zA-Z0-9]$"))
             .WithMessage("Custom domain is not valid.");
+        RuleFor(x => x.Port)
+            .InclusiveBetween(1, 65535)
+            .When(x => x.Port.HasValue);
     }
 }
 
@@ -86,6 +90,7 @@ public class CreateProjectCommandHandler : IRequestHandler<CreateProjectCommand,
             dockerfilePath: request.DockerfilePath,
             framework: request.Framework,
             customDomain: request.CustomDomain,
+            port: request.Port,
             autoDeployEnabled: request.AutoDeploy,
             tags: request.Tags,
             createdBy: _currentUser.UserId
@@ -229,6 +234,7 @@ public record UpdateProjectCommand(
     string? DockerfilePath,
     string? Framework,
     string? CustomDomain,
+    int? Port,
     bool? AutoDeploy,
     string[]? Tags,
     Guid? AssignedServerId
@@ -242,6 +248,9 @@ public class UpdateProjectCommandValidator : AbstractValidator<UpdateProjectComm
         RuleFor(x => x.Name).MaximumLength(100)
             .Matches(@"^[a-zA-Z0-9\s\-_\.]+$").When(x => x.Name is not null);
         RuleFor(x => x.Description).MaximumLength(500).When(x => x.Description is not null);
+        RuleFor(x => x.Port)
+            .InclusiveBetween(1, 65535)
+            .When(x => x.Port.HasValue);
     }
 }
 
@@ -277,6 +286,7 @@ public class UpdateProjectCommandHandler : IRequestHandler<UpdateProjectCommand,
             dockerfilePath: request.DockerfilePath,
             framework: request.Framework,
             customDomain: request.CustomDomain,
+            port: request.Port,
             autoDeployEnabled: request.AutoDeploy,
             updatedBy: _currentUser.UserId
         );

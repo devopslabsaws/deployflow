@@ -45,7 +45,7 @@ public class ValidatorTests
         var cmd = new CreateProjectCommand(
             "My App", "A description", "https://github.com/org/repo",
             "main", "npm run build", "npm start", null, null,
-            "nextjs", null, true, Array.Empty<string>(), null);
+            "nextjs", null, 3002, true, Array.Empty<string>(), null);
 
         var result = _projectValidator.TestValidate(cmd);
         result.ShouldNotHaveAnyValidationErrors();
@@ -56,7 +56,7 @@ public class ValidatorTests
     {
         var cmd = new CreateProjectCommand(
             "", null, null, null, null, null, null, null,
-            null, null, true, Array.Empty<string>(), null);
+            null, null, null, true, Array.Empty<string>(), null);
 
         var result = _projectValidator.TestValidate(cmd);
         result.ShouldHaveValidationErrorFor(x => x.Name);
@@ -67,7 +67,7 @@ public class ValidatorTests
     {
         var cmd = new CreateProjectCommand(
             "My App", null, "not-a-url", null, null, null, null, null,
-            null, null, true, Array.Empty<string>(), null);
+            null, null, null, true, Array.Empty<string>(), null);
 
         var result = _projectValidator.TestValidate(cmd);
         result.ShouldHaveValidationErrorFor(x => x.RepositoryUrl);
@@ -78,10 +78,21 @@ public class ValidatorTests
     {
         var cmd = new CreateProjectCommand(
             "My App", null, null, null, null, null, null, null,
-            null, "not a valid domain!", true, Array.Empty<string>(), null);
+            null, "not a valid domain!", null, true, Array.Empty<string>(), null);
 
         var result = _projectValidator.TestValidate(cmd);
         result.ShouldHaveValidationErrorFor(x => x.CustomDomain);
+    }
+
+    [Fact]
+    public void CreateProject_InvalidPort_FailsValidation()
+    {
+        var cmd = new CreateProjectCommand(
+            "My App", null, null, "main", null, null, null, null,
+            "nextjs", null, 70000, true, Array.Empty<string>(), null);
+
+        var result = _projectValidator.TestValidate(cmd);
+        result.ShouldHaveValidationErrorFor(x => x.Port);
     }
 
     // ─── AddServerCommandValidator ────────────────────────────────────────────
